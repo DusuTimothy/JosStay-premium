@@ -5,7 +5,10 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
+import { PasswordField } from "@/components/ui/PasswordField";
 import { useBooking, useToast } from "@/components/providers";
+
+const MIN_PASSWORD_LENGTH = 8;
 
 const shortcuts = [
   { href: "/bookings", icon: "calendar", title: "My bookings", text: "View, cancel or rebook a stay in Jos." },
@@ -29,6 +32,9 @@ export function AccountView() {
   const { bookings } = useBooking();
   const { toast } = useToast();
   const [signedIn, setSignedIn] = useState(false);
+  const [mode, setMode] = useState("signin");
+  const [name, setName] = useState("");
+  const [accountName, setAccountName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState({});
@@ -36,41 +42,94 @@ export function AccountView() {
   useEffect(() => {
     try {
       setSignedIn(window.localStorage.getItem("josstay-account") === "demo");
+      setAccountName(window.localStorage.getItem("josstay-account-name") || "");
+      setEmail(window.localStorage.getItem("josstay-account-email") || "");
     } catch {}
   }, []);
+
+  const switchMode = (nextMode) => {
+    setMode(nextMode);
+    setErrors({});
+  };
 
   const signIn = (provider) => {
     if (provider === "email") {
       const next = {};
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) next.email = "Enter a valid email address";
-      if (password.trim().length < 4) next.password = "Enter at least 4 characters";
+      if (mode === "signup" && name.trim().length < 2) {
+        next.name = "Enter your full name";
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
+        next.email = "Enter a valid email address";
+      }
+      if (password.trim().length < MIN_PASSWORD_LENGTH) {
+        next.password = `Use at least ${MIN_PASSWORD_LENGTH} characters`;
+      }
       setErrors(next);
       if (Object.keys(next).length) return;
+
+      const displayName = name.trim() || email.trim().split("@")[0];
+      try {
+        window.localStorage.setItem("josstay-account", "demo");
+        window.localStorage.setItem("josstay-account-email", email.trim());
+        window.localStorage.setItem("josstay-account-name", displayName);
+      } catch {}
+      setAccountName(displayName);
+      setSignedIn(true);
+      toast(
+        mode === "signup"
+          ? "Account created. Welcome to JosStay (demo)."
+          : "Signed in to your JosStay account (demo)",
+        "success",
+      );
+      return;
     }
+
     try {
       window.localStorage.setItem("josstay-account", "demo");
     } catch {}
     setSignedIn(true);
-    toast(provider === "google" ? "Signed in with Google (demo)" : "Signed in to your JosStay account (demo)", "success");
+    toast("Signed in with Google (demo)", "success");
   };
 
   const signOut = () => {
     try {
       window.localStorage.removeItem("josstay-account");
+      window.localStorage.removeItem("josstay-account-email");
+      window.localStorage.removeItem("josstay-account-name");
     } catch {}
     setSignedIn(false);
+    setMode("signin");
+    setName("");
+    setAccountName("");
     setEmail("");
     setPassword("");
+    setErrors({});
     toast("Signed out", "default");
   };
 
   const upcoming = bookings.filter((b) => b.status === "upcoming").length;
+  const displayName = accountName || "Demo Guest";
+  const initials =
+    displayName
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "DA";
+  const isSignup = mode === "signup";
 
   return (
     <div className="container-page pb-16 pt-8 sm:pt-12">
       <span className="eyebrow">Your account</span>
-      <h1 className="mt-4 font-display text-[34px] font-bold leading-none tracking-tightest text-ink sm:text-[46px]">{signedIn ? "Welcome back." : "Sign in to JosStay."}</h1>
-      <p className="mt-3 max-w-lg text-[13.5px] leading-relaxed text-muted">Keep your bookings, saved stays and host tools in one place. This is a demo account — no password is stored and no real sign-in happens.</p>
+      <h1 className="mt-4 font-display text-[34px] font-bold leading-none tracking-tightest text-ink sm:text-[46px]">
+        {signedIn ? "Welcome back." : isSignup ? "Create your account." : "Sign in to JosStay."}
+      </h1>
+      <p className="mt-3 max-w-lg text-[13.5px] leading-relaxed text-muted">
+        {isSignup
+          ? "Save your bookings, keep your favourite stays and check out faster next time. This is a demo account stored only in your browser."
+          : "Keep your bookings, saved stays and host tools in one place. This is a demo account — no password is stored and no real sign-in happens."}
+      </p>
 
       <div className="mt-8 grid gap-5 lg:grid-cols-[1fr_380px] lg:gap-8">
         <div className="rounded-xl border border-line bg-white p-5 shadow-card sm:p-7">
@@ -78,9 +137,9 @@ export function AccountView() {
             <>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3.5">
-                  <span className="grid h-14 w-14 place-items-center rounded-full bg-gold-500 font-display text-lg font-bold text-plum-900">DA</span>
+                  <span className="grid h-14 w-14 place-items-center rounded-full bg-gold-500 font-display text-lg font-bold text-plum-900">{initials}</span>
                   <div>
-                    <p className="font-display text-[20px] font-bold text-ink">Demo Guest</p>
+                    <p className="font-display text-[20px] font-bold text-ink">{displayName}</p>
                     <p className="text-[11.5px] text-muted">{email || "demo.guest@josstay.ng"}</p>
                     <div className="mt-1.5 flex flex-wrap gap-1.5"><Badge tone="purple">Guest</Badge><Badge tone="verified" icon="shield">Verified email</Badge></div>
                   </div>
@@ -118,24 +177,54 @@ export function AccountView() {
               </div>
 
               <form onSubmit={(e) => { e.preventDefault(); signIn("email"); }} className="space-y-3.5">
+                {isSignup && (
+                  <label className="block">
+                    <span className="label">Full name</span>
+                    <input
+                      value={name}
+                      onChange={(e) => { setName(e.target.value); setErrors((er) => ({ ...er, name: undefined })); }}
+                      className={`field ${errors.name ? "!border-red-400" : ""}`}
+                      placeholder="Grace Pam"
+                      autoComplete="name"
+                    />
+                    {errors.name && <span className="mt-1 block text-[11px] text-red-600">{errors.name}</span>}
+                  </label>
+                )}
+
                 <label className="block">
                   <span className="label">Email address</span>
                   <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setErrors((er) => ({ ...er, email: undefined })); }} className={`field ${errors.email ? "!border-red-400" : ""}`} placeholder="you@example.com" autoComplete="email" />
                   {errors.email && <span className="mt-1 block text-[11px] text-red-600">{errors.email}</span>}
                 </label>
 
-                <label className="block">
-                  <span className="label">Password</span>
-                  <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErrors((er) => ({ ...er, password: undefined })); }} className={`field ${errors.password ? "!border-red-400" : ""}`} placeholder="Any password works in the demo" autoComplete="current-password" />
-                  {errors.password && <span className="mt-1 block text-[11px] text-red-600">{errors.password}</span>}
-                </label>
+                <PasswordField
+                  label="Password"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setErrors((er) => ({ ...er, password: undefined })); }}
+                  error={errors.password}
+                  hint={isSignup ? `At least ${MIN_PASSWORD_LENGTH} characters.` : undefined}
+                  placeholder={isSignup ? "Create a password" : "Any password works in the demo"}
+                  autoComplete={isSignup ? "new-password" : "current-password"}
+                />
 
-                <Button type="submit" full size="lg">Sign in</Button>
+                <Button type="submit" full size="lg">{isSignup ? "Create account" : "Sign in"}</Button>
               </form>
 
-              <p className="mt-4 text-center text-[11px] text-muted">New to JosStay? <Link href="/host" className="font-semibold text-plum-700 underline decoration-plum-300 underline-offset-4">Create a host account</Link></p>
+              <p className="mt-4 text-center text-[11px] text-muted">
+                {isSignup ? (
+                  <>Already have an account?{" "}
+                    <button type="button" onClick={() => switchMode("signin")} className="font-semibold text-plum-700 underline decoration-plum-300 underline-offset-4">Sign in</button>
+                  </>
+                ) : (
+                  <>New to JosStay?{" "}
+                    <button type="button" onClick={() => switchMode("signup")} className="font-semibold text-plum-700 underline decoration-plum-300 underline-offset-4">Create an account</button>
+                  </>
+                )}
+              </p>
 
-              <div className="mt-6 rounded-lg bg-cream px-3.5 py-3 text-[11px] leading-relaxed text-ink/75"><strong className="font-semibold text-ink">Demo note:</strong> sign-in, Google OAuth and RBAC are simulated on the client. In production these are handled by the Express API with bcrypt, JWT sessions and role-based access control.</div>
+              <p className="mt-2 text-center text-[11px] text-muted">Want to list a place? <Link href="/host" className="font-semibold text-plum-700 underline decoration-plum-300 underline-offset-4">Create a host account</Link></p>
+
+              <div className="mt-6 rounded-lg bg-cream px-3.5 py-3 text-[11px] leading-relaxed text-ink/75"><strong className="font-semibold text-ink">Demo note:</strong> this account is stored only in your browser. In production, registration and sign-in are handled by the Express API with bcrypt, JWT sessions and role-based access control.</div>
             </>
           )}
         </div>

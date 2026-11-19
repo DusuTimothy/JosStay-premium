@@ -6,7 +6,10 @@ import { AREAS, PROPERTY_TYPES } from "@josstay/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { PasswordField } from "@/components/ui/PasswordField";
 import { useCurrency, useToast } from "@/components/providers";
+
+const MIN_PASSWORD_LENGTH = 8;
 
 const benefits = [
   { icon: "wallet", title: "Earn from every night", text: "Set your own prices and get paid securely through Paystack after each stay." },
@@ -20,6 +23,8 @@ export function HostView() {
   const { toast } = useToast();
   const { format } = useCurrency();
   const [form, setForm] = useState({ name: "", email: "", phone: "", type: "apartment", area: "Rayfield" });
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [rate, setRate] = useState(65000);
@@ -32,6 +37,8 @@ export function HostView() {
     if (!form.name.trim()) next.name = "Enter your full name";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email)) next.email = "Enter a valid email address";
     if (form.phone.replace(/\D/g, "").length < 10) next.phone = "Enter a valid phone number";
+    if (password.length < MIN_PASSWORD_LENGTH) next.password = `Use at least ${MIN_PASSWORD_LENGTH} characters`;
+    if (confirmPassword !== password) next.confirmPassword = "Passwords do not match";
     setErrors(next);
     if (Object.keys(next).length) return;
 
@@ -40,6 +47,8 @@ export function HostView() {
     try {
       window.localStorage.setItem("josstay-host-name", form.name);
     } catch {}
+    setPassword("");
+    setConfirmPassword("");
     setLoading(false);
     toast("Host account created (demo). Let's add your first listing.", "success");
     router.push("/host/dashboard");
@@ -105,6 +114,25 @@ export function HostView() {
                 <input type="tel" value={form.phone} onChange={(e) => { setForm((f) => ({ ...f, phone: e.target.value })); setErrors((er) => ({ ...er, phone: undefined })); }} className={`field ${errors.phone ? "!border-red-400" : ""}`} placeholder="+234 800 000 0000" />
                 {errors.phone && <span className="mt-1 block text-[11px] text-red-600">{errors.phone}</span>}
               </label>
+
+              <PasswordField
+                label="Password"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setErrors((er) => ({ ...er, password: undefined })); }}
+                error={errors.password}
+                hint={`At least ${MIN_PASSWORD_LENGTH} characters.`}
+                placeholder="Create a password"
+                autoComplete="new-password"
+              />
+
+              <PasswordField
+                label="Confirm password"
+                value={confirmPassword}
+                onChange={(e) => { setConfirmPassword(e.target.value); setErrors((er) => ({ ...er, confirmPassword: undefined })); }}
+                error={errors.confirmPassword}
+                placeholder="Re-enter your password"
+                autoComplete="new-password"
+              />
 
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
