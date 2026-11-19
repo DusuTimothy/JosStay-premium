@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { getPayouts } from "../controllers/hostController.js";
-import { requireRole } from "../middleware/requireRole.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
 
-router.get("/payouts", requireRole("host", "admin"), getPayouts);
+router.get("/payouts", requireAuth, requireRole("host", "admin"), getPayouts);
 
 export default router;

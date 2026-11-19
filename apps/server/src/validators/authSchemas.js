@@ -1,10 +1,28 @@
 import { z } from "zod";
 
-export const AuthSchema = z.object({
-  name: z.string().min(2).optional(),
-  email: z.string().email(),
-  password: z.string().min(8),
-  role: z.enum(["guest", "host", "admin"]).optional().default("guest"),
-});
+const email = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .email("Enter a valid email address")
+  .max(254);
 
-export const LoginSchema = AuthSchema.pick({ email: true, password: true });
+const password = z
+  .string()
+  .min(12, "Password must be at least 12 characters")
+  .max(72, "Password must be 72 characters or fewer");
+
+export const RegisterSchema = z
+  .object({
+    name: z.string().trim().min(2).max(120).optional(),
+    email,
+    password,
+  })
+  .strict();
+
+export const LoginSchema = z
+  .object({
+    email,
+    password: z.string().min(1).max(72),
+  })
+  .strict();

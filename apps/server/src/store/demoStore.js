@@ -1,7 +1,8 @@
 import { SEED_BOOKINGS } from "@josstay/shared";
 
 /* ------------------------------------------------------------------ */
-/* In-memory demo store. Replace with Sequelize + PostgreSQL/Supabase. */
+/* In-memory fallback for local demo mode. Supabase is used when       */
+/* DATA_BACKEND=supabase; see docs/SUPABASE_SETUP.md.                  */
 /* ------------------------------------------------------------------ */
 export const bookings = SEED_BOOKINGS.map((b) => ({
   ...b,

@@ -1,0 +1,42 @@
+# Supabase CLI configuration for JosStay Premium.
+# Remote migrations: `supabase link --project-ref <ref>` then `supabase db push`.
+# The API uses the hosted Postgres database; local services are optional.
+
+project_id = "josstay-premium"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[db.migrations]
+enabled = true
+schema_paths = []
+
+[db.seed]
+# Sample data is loaded by `npm --workspace @josstay/server run db:seed`,
+# which uses the service role and keeps this file out of SQL duplication.
+enabled = false
+sql_paths = []
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1"
+
+# The application uses its own bcrypt + JWT auth in the Express API and does
+# not expose Supabase Auth to clients. Keep it off locally.
+[auth]
+enabled = false
+
+# Property images currently use external URLs. Enable only when you add the
+# upload flow and bucket policies.
+[storage]
+enabled = false
