@@ -12,6 +12,7 @@ import {
   typeLabel,
 } from "@josstay/shared";
 import { SearchBar } from "@/components/shared/SearchBar";
+import { SearchSelect } from "@/components/shared/SearchSelect";
 import { PropertyCard } from "@/components/shared/PropertyCard";
 import { FilterPanel, DEFAULT_FILTERS } from "@/components/shared/FilterPanel";
 import { EmptyState, ErrorState, LoadingResults } from "@/components/shared/states";
@@ -28,11 +29,11 @@ const SearchMap = dynamic(() => import("./SearchMap").then((mod) => mod.SearchMa
 });
 
 const SORTS = [
-  { id: "recommended", label: "Recommended" },
-  { id: "price-asc", label: "Price: low to high" },
-  { id: "price-desc", label: "Price: high to low" },
-  { id: "rating", label: "Top rated" },
-  { id: "distance", label: "Closest to airport" },
+  { value: "recommended", label: "Recommended", hint: "Best match for your filters" },
+  { value: "price-asc", label: "Price: low to high", hint: "Budget-friendly stays first" },
+  { value: "price-desc", label: "Price: high to low", hint: "Premium stays first" },
+  { value: "rating", label: "Top rated", hint: "Highest guest ratings" },
+  { value: "distance", label: "Closest to airport", hint: "Shortest transfer time" },
 ];
 
 const TYPE_TABS = [
@@ -384,27 +385,16 @@ export function SearchView() {
             </>
           )}
         </p>
-        <label className="flex items-center gap-2 text-[13px] text-muted">
-          Sort
-          <span className="relative inline-flex items-center">
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value)}
-              className="appearance-none bg-transparent pr-5 text-[13px] font-semibold text-ink outline-none"
-              aria-label="Sort results"
-            >
-              {SORTS.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <Icon
-              name="chevronDown"
-              className="pointer-events-none absolute right-0 h-3.5 w-3.5 text-ink"
-            />
-          </span>
-        </label>
+        <SearchSelect
+          variant="inline"
+          icon="sliders"
+          label="Sort by"
+          value={sort}
+          onChange={setSort}
+          options={SORTS}
+          panelTitle="Sort stays"
+          ariaLabel="Sort results"
+        />
       </div>
 
       <div

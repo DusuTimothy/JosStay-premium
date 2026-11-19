@@ -205,7 +205,7 @@ export function PropertyDetailView() {
 
           <button
             type="button"
-            onClick={() => setGalleryOpen(true)}
+            onClick={() => { setActiveImage(0); setGalleryOpen(true); }}
             className="absolute bottom-3 right-3 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-[11.5px] font-semibold text-ink shadow-sm backdrop-blur transition hover:bg-white sm:hidden"
           >
             +{extraPhotos} photos
@@ -505,7 +505,17 @@ export function PropertyDetailView() {
                 <Icon name="x" className="h-5 w-5" />
               </button>
             </div>
-            <img src={property.images[activeImage]} alt={`${property.name} photo ${activeImage + 1}`} className="w-full rounded-lg object-cover" />
+            <img
+              key={galleryImages[activeImage] ?? activeImage}
+              src={galleryImages[activeImage] ?? galleryImages[0]}
+              alt={`${property.name} photo ${activeImage + 1}`}
+              onError={(event) => {
+                if (galleryImages[0] && event.currentTarget.src !== galleryImages[0]) {
+                  event.currentTarget.src = galleryImages[0];
+                }
+              }}
+              className="w-full rounded-lg object-cover"
+            />
             <div className="mt-3 grid grid-cols-4 gap-2">
               {galleryImages.map((image, index) => (
                 <button key={image} type="button" onClick={() => setActiveImage(index)} className={`overflow-hidden rounded-md border-2 ${activeImage === index ? "border-gold-400" : "border-transparent"}`} aria-label={`View photo ${index + 1}`}>

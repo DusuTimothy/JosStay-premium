@@ -15,8 +15,10 @@ export function SearchSelect({
   placeholder = "",
   ariaLabel,
   panelTitle,
+  variant = "field",
   className = "",
 }) {
+  const isInline = variant === "inline";
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [position, setPosition] = useState(null);
@@ -187,7 +189,11 @@ export function SearchSelect({
   );
 
   return (
-    <div className={`relative h-full bg-white ${className}`}>
+    <div
+      className={
+        isInline ? `relative inline-flex ${className}` : `relative h-full bg-white ${className}`
+      }
+    >
       <button
         ref={triggerRef}
         type="button"
@@ -196,30 +202,60 @@ export function SearchSelect({
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         aria-label={ariaLabel || label}
-        className={`group flex h-full w-full items-center gap-3 px-4 py-3 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-plum-300 lg:px-5 ${
-          open ? "bg-plum-50/60" : "bg-white"
-        }`}
+        className={
+          isInline
+            ? `inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-[13px] font-semibold shadow-[0_1px_2px_rgba(28,18,42,.04)] outline-none transition focus-visible:ring-2 focus-visible:ring-plum-200 ${
+                open
+                  ? "border-plum-400 bg-plum-50 text-plum-800"
+                  : "border-line bg-white text-ink hover:border-plum-300 hover:shadow-sm"
+              }`
+            : `group flex h-full w-full items-center gap-3 px-4 py-3 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-plum-300 lg:px-5 ${
+                open ? "bg-plum-50/60" : "bg-white"
+              }`
+        }
       >
-        <Icon
-          name={icon || "search"}
-          className={`h-5 w-5 shrink-0 transition ${open ? "text-plum-700" : "text-plum-600"}`}
-        />
-        <span className="min-w-0 flex-1">
-          <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
-            {label}
-          </span>
-          <span className="mt-0.5 flex items-center justify-between gap-2">
-            <span className="truncate text-[15px] font-semibold text-ink">
+        {isInline ? (
+          <>
+            <Icon
+              name={icon || "sliders"}
+              className={`h-4 w-4 transition ${open ? "text-plum-700" : "text-plum-600"}`}
+            />
+            <span className="font-medium text-muted">{label}</span>
+            <span className="h-3.5 w-px bg-line" aria-hidden="true" />
+            <span className="max-w-[160px] truncate text-ink">
               {selected?.label ?? placeholder}
             </span>
             <Icon
               name="chevronDown"
-              className={`h-4 w-4 shrink-0 transition ${
-                open ? "rotate-180 text-plum-700" : "text-muted group-hover:text-plum-600"
+              className={`h-3.5 w-3.5 shrink-0 transition ${
+                open ? "rotate-180 text-plum-700" : "text-muted"
               }`}
             />
-          </span>
-        </span>
+          </>
+        ) : (
+          <>
+            <Icon
+              name={icon || "search"}
+              className={`h-5 w-5 shrink-0 transition ${open ? "text-plum-700" : "text-plum-600"}`}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
+                {label}
+              </span>
+              <span className="mt-0.5 flex items-center justify-between gap-2">
+                <span className="truncate text-[15px] font-semibold text-ink">
+                  {selected?.label ?? placeholder}
+                </span>
+                <Icon
+                  name="chevronDown"
+                  className={`h-4 w-4 shrink-0 transition ${
+                    open ? "rotate-180 text-plum-700" : "text-muted group-hover:text-plum-600"
+                  }`}
+                />
+              </span>
+            </span>
+          </>
+        )}
       </button>
 
       {open && mounted && (isMobile || position)
