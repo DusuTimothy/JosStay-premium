@@ -2,7 +2,7 @@
 
 **Project:** JosStay Premium — a mobile-first accommodation booking platform for Jos, Plateau State.
 **Build window:** 18 November 2026 → 21 November 2026 (4 build days).
-**Stack:** HTML, Tailwind CSS, JavaScript, React, Next.js, Node.js, Express, PostgreSQL, Supabase, supabase-js, RLS, Redis, Zod, Multer, Helmet, CORS, bcrypt, JWT, dotenv, Render, Vercel, Brevo, Paystack, data analysis, AI/LLM integration, WhatsApp integration, Google sign-up, RBAC.
+**Stack:** HTML, Tailwind CSS, JavaScript, React, Next.js, Node.js, Express, PostgreSQL, Aiven (Postgres + Redis), pg, redis, SQL migrations, RLS, Zod, Multer, Helmet, CORS, bcrypt, JWT, dotenv, Render, Vercel, Brevo, Paystack, data analysis, AI/LLM integration, WhatsApp integration, Google sign-up, RBAC.
 
 ---
 
@@ -118,64 +118,55 @@
 >
 > Every button now goes somewhere. Tomorrow: polish, test, deploy. 🚀
 >
-> #JosStay #BuildInPublic #Jos #PlateauState #Hosting #TravelTech #ProductDesign #Nigeria
+> #JosStay #BuildInPublic #Jos #NigeriaStartups #ProductDesign #WebApp #NodeJS #TravelTech
 
-**Suggested visual:** Carousel of My bookings, Host dashboard, and Help centre screens.
+**Suggested visual:** Collage of Bundle, My bookings, Host dashboard and Help centre.
 
 ---
 
 ## Day 4 — Saturday, 21 November 2026
-### QA, documentation & launch
+### Polish, persistence & deploy
 
-**Goal:** Ship a clean build and publish the project story.
+**Goal:** A polished, documented demo ready to share and ready for real integrations.
 
 **Tasks**
-- [x] Full click-through QA on mobile (375px) and desktop (1440px).
-- [x] Test search filters, date pricing, cancel/rebook, payment error/retry, and empty states.
-- [x] Accessibility pass: labels, focus states, contrast, tap targets (min 44px).
-- [x] Performance pass: image sizing, font loading, route prefetching.
-- [x] Finalise README, setup instructions, environment variables, and API documentation.
-- [ ] Deploy client to Vercel and server to Render (or run locally for the demo).
-- [ ] Publish launch post and a 60-second demo video.
-- [ ] Collect feedback and log the next iteration (real Paystack, Supabase auth, Redis caching, AI concierge).
+- [ ] Wire the client to the live API where useful and harden form validation.
+- [ ] Apply PostgreSQL migrations, run seed/verify scripts, and configure Aiven PostgreSQL/Redis with TLS CA certificates.
+- [ ] Add route-level loading states, error boundaries, and 404 handling.
+- [ ] Run a full mobile + desktop QA pass on the booking and host flows.
+- [ ] Optimise images, metadata, Open Graph tags and Core Web Vitals basics.
+- [ ] Deploy client to Vercel and server to Render with environment variables and CA cert paths configured.
+- [ ] Finalise README, architecture notes and API docs.
 
-**Deliverable:** Public demo link + launch announcement.
+**Deliverable:** A deployed, shareable JosStay Premium prototype backed by PostgreSQL.
 
-**Launch post (X / LinkedIn / Instagram)**
+**Post of the day (X / LinkedIn / Instagram)**
 
-> 🚀 **JosStay is live.**
+> Day 4 — we shipped **JosStay** 🚀
 >
-> Finding a trusted place to stay in Jos just got easier. Hotels, apartments, shortlets, guest houses and Airbnb-style homes — verified, transparently priced, and bookable on your phone.
+> A mobile-first way to book hotels, apartments, shortlets and guest houses in Jos, Plateau State.
 >
-> ✅ 10 sample stays across every budget
-> ✅ Naira prices with a dollar view
-> ✅ Card, bank transfer and USSD at checkout
-> ✅ Flight + stay bundles
-> ✅ A dashboard for hosts
-> ✅ WhatsApp support
+> ✅ 10+ clickable screens
+> ✅ Live search, filters and booking flow
+> ✅ Flight + stay bundle
+> ✅ Host dashboard and help centre
+> ✅ NGN pricing, no hidden fees
 >
-> Built in 4 days with Next.js, Tailwind, Express and a lot of ☕.
+> Built with Next.js, Tailwind CSS, Express and a full-stack monorepo — in 4 days.
 >
-> Try the demo and tell us what to build next. 👇
+> Live demo: <add link>
+> Repo: <add link>
 >
-> #JosStay #LaunchDay #Jos #PlateauState #NigeriaTech #TravelTech #BuildInPublic #NextJS
+> #JosStay #BuildInPublic #Jos #PlateauState #NextJS #TailwindCSS #ReactJS #NodeJS #TechInNigeria #Startup
 
-**Suggested visual:** 60-second demo video + launch carousel (Home, Search, Detail, Checkout, Host).
+**Suggested visual:** 30–45 second walkthrough of the full product, ending on the confirmation screen.
 
 ---
 
-## Content cadence summary
+## Optional follow-ups (post–Day 4)
 
-| Day | Date | Theme | Primary screen |
-|-----|------------|----------------------|----------------------|
-| 1 | 18 Nov 2026 | Foundation & Home | Home |
-| 2 | 19 Nov 2026 | Booking flow | Search → Detail → Checkout → Confirmation |
-| 3 | 20 Nov 2026 | Complete product | Bundle, Bookings, Host, Help |
-| 4 | 21 Nov 2026 | QA & launch | Everything |
-
-**Posting tips**
-- Post between 8–10am or 6–8pm WAT for best reach.
-- Lead with the customer benefit, not the code.
-- Always attach a screen recording or screenshot; mobile frames perform best.
-- Keep the same hashtag set for the week so the series is easy to follow.
-- Reply to comments with the demo link once it is live on Day 4.
+- Replace in-memory bookings with a production PostgreSQL data path end-to-end from the client.
+- Integrate real Paystack payments and Brevo transactional email.
+- Add Google sign-in and full RBAC middleware.
+- Connect Redis-backed caching and WhatsApp concierge notifications.
+- Run a data analysis pass on search, conversion and host performance.

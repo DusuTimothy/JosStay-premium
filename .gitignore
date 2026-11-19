@@ -26,10 +26,6 @@ yarn-error.log*
 
 # Misc
 .DS_Store
-*.pem
+# CA certificates (.pem) are allowed in this repo for Aiven/database TLS.
 coverage/
 .vercel
-
-# Supabase CLI
-supabase/.temp/
-supabase/.branches/

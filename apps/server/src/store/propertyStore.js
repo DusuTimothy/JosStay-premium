@@ -5,35 +5,65 @@ import {
   toIso,
 } from "@josstay/shared";
 import { HttpError } from "../lib/http.js";
-import { db, isSupabaseEnabled } from "../lib/supabase.js";
+import { isDatabaseEnabled, query } from "../lib/postgres.js";
 import { mapPropertyRow } from "./mappers.js";
 
-const PROPERTY_SELECT = `
-  id,
-  legacy_id,
-  slug,
-  name,
-  type,
-  area,
-  address,
-  price,
-  cleaning_fee,
-  rating,
-  review_count,
-  verified,
-  free_cancellation,
-  distance_km,
-  badge,
-  max_guests,
-  summary,
-  description,
-  house_rules,
-  is_published,
-  hosts ( name, joined_year, superhost ),
-  property_images ( url, position ),
-  rooms ( id, code, name, price, capacity, beds, size, refundable ),
-  property_amenities ( amenity_id, amenities ( id, label ) ),
-  property_reviews ( guest_name, reviewed_on, rating, quote )
+const PROPERTY_DETAIL_SQL = `
+  select
+    p.*,
+    to_jsonb(h) as hosts,
+    coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'url', pi.url,
+          'alt', pi.alt,
+          'position', pi.position
+        ) order by pi.position
+      )
+      from public.property_images pi
+      where pi.property_id = p.id
+    ), '[]'::jsonb) as property_images,
+    coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'id', r.id,
+          'code', r.code,
+          'name', r.name,
+          'price', r.price,
+          'capacity', r.capacity,
+          'beds', r.beds,
+          'size', r.size,
+          'refundable', r.refundable
+        ) order by r.price, r.code
+      )
+      from public.rooms r
+      where r.property_id = p.id
+    ), '[]'::jsonb) as rooms,
+    coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'amenity_id', pa.amenity_id,
+          'amenities', jsonb_build_object('id', a.id, 'label', a.label)
+        ) order by a.label
+      )
+      from public.property_amenities pa
+      join public.amenities a on a.id = pa.amenity_id
+      where pa.property_id = p.id
+    ), '[]'::jsonb) as property_amenities,
+    coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'guest_name', pr.guest_name,
+          'reviewed_on', pr.reviewed_on,
+          'rating', pr.rating,
+          'quote', pr.quote
+        ) order by pr.reviewed_on desc, pr.created_at desc
+      )
+      from public.property_reviews pr
+      where pr.property_id = p.id
+    ), '[]'::jsonb) as property_reviews
+  from public.properties p
+  join public.hosts h on h.id = p.host_id
 `;
 
 const normalizeDestination = (value) => String(value || "").trim().toLowerCase();
@@ -84,8 +114,8 @@ const filterAndSort = (items, query) => {
   return sortProperties(filtered, query.sort);
 };
 
-const paginate = (items, query) =>
-  items.slice(query.offset, query.offset + query.limit);
+const paginate = (items, queryParams) =>
+  items.slice(queryParams.offset, queryParams.offset + queryParams.limit);
 
 const contextFromDemo = (property) => ({
   property,
@@ -113,61 +143,66 @@ const contextFromRow = (row) => ({
     })),
 });
 
-export const listProperties = async (query) => {
-  if (!isSupabaseEnabled) {
-    return paginate(filterAndSort(demoProperties, query), query);
+export const listProperties = async (queryParams) => {
+  if (!isDatabaseEnabled) {
+    return paginate(filterAndSort(demoProperties, queryParams), queryParams);
   }
 
-  let request = db()
-    .from("properties")
-    .select(PROPERTY_SELECT)
-    .eq("is_published", true)
-    .gte("price", query.minPrice)
-    .lte("price", query.maxPrice)
-    .gte("rating", query.rating)
-    .order("legacy_id", { ascending: true })
-    .limit(500);
+  try {
+    const where = ["p.is_published = true", "p.price >= $1", "p.price <= $2", "p.rating >= $3"];
+    const params = [queryParams.minPrice, queryParams.maxPrice, queryParams.rating];
 
-  if (query.type) request = request.eq("type", query.type);
-  if (query.freeCancellation === "true") {
-    request = request.eq("free_cancellation", true);
-  }
-  if (query.maxDistance) {
-    request = request.lte("distance_km", query.maxDistance);
-  }
+    if (queryParams.type) {
+      params.push(queryParams.type);
+      where.push(`p.type = $${params.length}`);
+    }
+    if (queryParams.freeCancellation === "true") {
+      where.push("p.free_cancellation = true");
+    }
+    if (queryParams.maxDistance) {
+      params.push(queryParams.maxDistance);
+      where.push(`p.distance_km <= $${params.length}`);
+    }
 
-  const { data, error } = await request;
+    const sql = `
+      ${PROPERTY_DETAIL_SQL}
+      where ${where.join(" and ")}
+      order by p.legacy_id asc nulls last, p.created_at asc
+      limit 500
+    `;
 
-  if (error) {
+    const { rows } = await query(sql, params);
+
+    // Destination and multi-amenity matching are applied in memory. The demo
+    // catalogue is small; move this into SQL/views when the catalogue grows.
+    const mapped = rows.map(mapPropertyRow);
+    return paginate(filterAndSort(mapped, queryParams), queryParams);
+  } catch {
     throw new HttpError(503, "Property data is temporarily unavailable");
   }
-
-  // Destination and multi-amenity matching are applied in memory. The demo
-  // catalogue is small; move this into an RPC/view when the catalogue grows.
-  const mapped = (data || []).map(mapPropertyRow);
-  return paginate(filterAndSort(mapped, query), query);
 };
 
 export const getPropertyContext = async (slug) => {
   const cleanSlug = String(slug || "").trim();
 
-  if (!isSupabaseEnabled) {
+  if (!isDatabaseEnabled) {
     const property = getDemoProperty(cleanSlug);
     return property ? contextFromDemo(property) : null;
   }
 
-  const { data, error } = await db()
-    .from("properties")
-    .select(PROPERTY_SELECT)
-    .eq("slug", cleanSlug)
-    .eq("is_published", true)
-    .maybeSingle();
+  try {
+    const { rows } = await query(
+      `${PROPERTY_DETAIL_SQL}
+       where p.slug = $1 and p.is_published = true
+       limit 1`,
+      [cleanSlug],
+    );
 
-  if (error) {
+    const row = rows[0];
+    return row ? contextFromRow(row) : null;
+  } catch {
     throw new HttpError(503, "Property data is temporarily unavailable");
   }
-
-  return data ? contextFromRow(data) : null;
 };
 
 const todayIso = () => toIso(new Date());
@@ -192,7 +227,7 @@ export const getPropertyAvailability = async (slug) => {
     ? Math.min(...context.rooms.map((room) => Number(room.price) || 0))
     : 0;
 
-  if (!isSupabaseEnabled) {
+  if (!isDatabaseEnabled) {
     const days = [];
     for (let i = 0; i < 60; i += 1) {
       const date = addDays(start, i);
@@ -209,22 +244,31 @@ export const getPropertyAvailability = async (slug) => {
   const unavailable = new Set();
 
   if (roomIds.length) {
-    const { data, error } = await db()
-      .from("bookings")
-      .select("check_in, check_out")
-      .in("room_id", roomIds)
-      .in("status", ["upcoming", "confirmed"])
-      .lt("check_in", end)
-      .gt("check_out", start);
+    try {
+      const placeholders = roomIds.map((_, index) => `$${index + 1}::uuid`).join(", ");
+      const params = [...roomIds, start, end];
+      const startIndex = roomIds.length + 1;
+      const endIndex = roomIds.length + 2;
 
-    if (error) {
+      const { rows } = await query(
+        `select check_in, check_out
+         from public.bookings
+         where room_id in (${placeholders})
+           and status in ('upcoming', 'confirmed')
+           and check_in < $${endIndex}::date
+           and check_out > $${startIndex}::date`,
+        params,
+      );
+
+      for (const booking of rows) {
+        const checkIn = String(booking.check_in).slice(0, 10);
+        const checkOut = String(booking.check_out).slice(0, 10);
+        const from = checkIn > start ? checkIn : start;
+        const to = checkOut < end ? checkOut : end;
+        eachDate(from, to, (date) => unavailable.add(date));
+      }
+    } catch {
       throw new HttpError(503, "Availability is temporarily unavailable");
-    }
-
-    for (const booking of data || []) {
-      const from = booking.check_in > start ? booking.check_in : start;
-      const to = booking.check_out < end ? booking.check_out : end;
-      eachDate(from, to, (date) => unavailable.add(date));
     }
   }
 

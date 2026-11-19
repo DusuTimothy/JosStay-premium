@@ -15,9 +15,22 @@ const months = [
   "Dec",
 ];
 
+const toDateString = (value) => {
+  if (!value) return value;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+};
+
+const toDateTimeString = (value) => {
+  if (!value) return value;
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+};
+
 const monthLabel = (isoDate) => {
   if (!isoDate) return "";
-  const [year, month] = String(isoDate).slice(0, 10).split("-");
+  const date = toDateString(isoDate);
+  const [year, month] = date.split("-");
   const index = Number(month) - 1;
   return months[index] ? `${months[index]} ${year}` : "";
 };
@@ -56,7 +69,7 @@ export const mapPropertyRow = (row) => {
     .filter(Boolean);
 
   const reviews = [...(row.property_reviews || [])]
-    .sort((a, b) => String(b.reviewed_on).localeCompare(String(a.reviewed_on)))
+    .sort((a, b) => String(toDateString(b.reviewed_on)).localeCompare(String(toDateString(a.reviewed_on))))
     .map((review) => ({
       name: review.guest_name,
       date: monthLabel(review.reviewed_on),
@@ -105,8 +118,8 @@ export const mapBookingRow = (row) => {
     propertyName: property.name,
     roomId: room.code,
     roomName: room.name,
-    checkIn: row.check_in,
-    checkOut: row.check_out,
+    checkIn: toDateString(row.check_in),
+    checkOut: toDateString(row.check_out),
     guests: row.guests,
     airportPickup: row.airport_pickup,
     paymentMethod: row.payment_method,
@@ -115,8 +128,8 @@ export const mapBookingRow = (row) => {
     total: row.total,
     currency: row.currency,
     quote: row.quote,
-    createdAt: row.created_at,
-    ...(row.cancelled_at ? { cancelledAt: row.cancelled_at } : {}),
+    createdAt: toDateTimeString(row.created_at),
+    ...(row.cancelled_at ? { cancelledAt: toDateTimeString(row.cancelled_at) } : {}),
     guest: {
       firstName: row.guest_first_name,
       lastName: row.guest_last_name,
@@ -132,6 +145,6 @@ export const mapPayoutRow = (row) => ({
   commission: row.commission,
   net: row.net,
   status: row.status,
-  ...(row.scheduled_for ? { scheduledFor: row.scheduled_for } : {}),
-  createdAt: row.created_at,
+  ...(row.scheduled_for ? { scheduledFor: toDateString(row.scheduled_for) } : {}),
+  createdAt: toDateTimeString(row.created_at),
 });

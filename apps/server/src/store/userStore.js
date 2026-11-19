@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { BCRYPT_ROUNDS } from "../config/env.js";
 import { HttpError } from "../lib/http.js";
-import { db, isSupabaseEnabled } from "../lib/supabase.js";
+import { isDatabaseEnabled, query } from "../lib/postgres.js";
 import { users } from "./demoStore.js";
 import { mapProfile } from "./mappers.js";
 
@@ -26,47 +26,51 @@ export const publicUser = (user) =>
 export const findUserByEmail = async (email) => {
   const normalized = normalizeEmail(email);
 
-  if (!isSupabaseEnabled) {
+  if (!isDatabaseEnabled) {
     return users.find((user) => user.email === normalized) ?? null;
   }
 
-  const { data, error } = await db()
-    .from("profiles")
-    .select("id, email, password_hash, full_name, role")
-    .eq("email", normalized)
-    .maybeSingle();
+  try {
+    const { rows } = await query(
+      `select id, email, password_hash, full_name, role
+       from public.profiles
+       where lower(email) = lower($1)
+       limit 1`,
+      [normalized],
+    );
 
-  if (error) {
+    const data = rows[0];
+    return data
+      ? {
+          id: data.id,
+          email: data.email,
+          passwordHash: data.password_hash,
+          name: data.full_name,
+          role: data.role,
+        }
+      : null;
+  } catch {
     throw new HttpError(503, "Account service is temporarily unavailable");
   }
-
-  return data
-    ? {
-        id: data.id,
-        email: data.email,
-        passwordHash: data.password_hash,
-        name: data.full_name,
-        role: data.role,
-      }
-    : null;
 };
 
 export const findUserById = async (id) => {
-  if (!isSupabaseEnabled) {
+  if (!isDatabaseEnabled) {
     return users.find((user) => String(user.id) === String(id)) ?? null;
   }
 
-  const { data, error } = await db()
-    .from("profiles")
-    .select("id, email, full_name, role")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) {
+  try {
+    const { rows } = await query(
+      `select id, email, full_name, role
+       from public.profiles
+       where id = $1::uuid
+       limit 1`,
+      [id],
+    );
+    return mapProfile(rows[0] || null);
+  } catch {
     throw new HttpError(503, "Account service is temporarily unavailable");
   }
-
-  return mapProfile(data);
 };
 
 export const createUser = async ({ name, email, password, role = "guest" }) => {
@@ -77,7 +81,7 @@ export const createUser = async ({ name, email, password, role = "guest" }) => {
   const normalized = normalizeEmail(email);
   const fullName = name?.trim() || normalized.split("@")[0];
 
-  if (!isSupabaseEnabled) {
+  if (!isDatabaseEnabled) {
     if (users.some((user) => user.email === normalized)) {
       throw new HttpError(409, "Email already registered");
     }
@@ -98,36 +102,33 @@ export const createUser = async ({ name, email, password, role = "guest" }) => {
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-  const { data, error } = await db()
-    .from("profiles")
-    .insert({
-      email: normalized,
-      password_hash: passwordHash,
-      full_name: fullName,
-      role,
-    })
-    .select("id, email, full_name, role")
-    .single();
-
-  if (error) {
-    if (error.code === "23505") {
+  try {
+    const { rows } = await query(
+      `insert into public.profiles (email, password_hash, full_name, role)
+       values ($1, $2, $3, $4::public.user_role)
+       returning id, email, full_name, role`,
+      [normalized, passwordHash, fullName, role],
+    );
+    return mapProfile(rows[0]);
+  } catch (error) {
+    if (error?.code === "23505") {
       throw new HttpError(409, "Email already registered");
     }
     throw new HttpError(503, "Account service is temporarily unavailable");
   }
-
-  return mapProfile(data);
 };
 
 export const touchLastLogin = async (id) => {
-  if (!isSupabaseEnabled) return;
+  if (!isDatabaseEnabled) return;
 
-  const { error } = await db()
-    .from("profiles")
-    .update({ last_login_at: new Date().toISOString() })
-    .eq("id", id);
-
-  if (error) {
+  try {
+    await query(
+      `update public.profiles
+       set last_login_at = now()
+       where id = $1::uuid`,
+      [id],
+    );
+  } catch {
     console.warn("[auth] Could not update last_login_at");
   }
 };

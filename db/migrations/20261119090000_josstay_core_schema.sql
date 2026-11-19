@@ -1,33 +1,40 @@
--- JosStay Premium — core schema
--- Apply with Supabase CLI (`supabase db push`) or paste into the SQL editor.
+-- JosStay Premium — core schema (Aiven PostgreSQL)
+-- Apply in order with: npm --workspace @josstay/server run db:migrate
 --
--- Security model:
---   * All IDs are UUIDs except the public amenity catalogue.
---   * Booking totals/quotes are always written by the API, never trusted from clients.
---   * The API uses the service-role key server-side only; RLS still denies anon access.
---   * A GiST exclusion constraint prevents double-booking a room.
+-- Notes:
+--   * Uses pgcrypto (gen_random_uuid) and btree_gist (room overlap exclusion).
+--   * Booking totals/quotes are written by the API server, never trusted from clients.
+--   * Designed for server-side access via a trusted database role.
 
-create schema if not exists extensions;
-
-create extension if not exists "pgcrypto" with schema extensions;
-create extension if not exists "btree_gist" with schema extensions;
-
-set search_path = public, extensions;
+create extension if not exists pgcrypto;
+create extension if not exists btree_gist;
 
 -- ---------------------------------------------------------------------------
 -- Enums
 -- ---------------------------------------------------------------------------
 
-create type public.user_role as enum ('guest', 'host', 'admin');
-create type public.booking_status as enum (
-  'upcoming',
-  'confirmed',
-  'completed',
-  'cancelled',
-  'no_show'
-);
-create type public.payment_method as enum ('card', 'bank', 'ussd');
-create type public.payout_status as enum ('scheduled', 'paid', 'on_hold', 'failed');
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'user_role') then
+    create type public.user_role as enum ('guest', 'host', 'admin');
+  end if;
+  if not exists (select 1 from pg_type where typname = 'booking_status') then
+    create type public.booking_status as enum (
+      'upcoming',
+      'confirmed',
+      'completed',
+      'cancelled',
+      'no_show'
+    );
+  end if;
+  if not exists (select 1 from pg_type where typname = 'payment_method') then
+    create type public.payment_method as enum ('card', 'bank', 'ussd');
+  end if;
+  if not exists (select 1 from pg_type where typname = 'payout_status') then
+    create type public.payout_status as enum ('scheduled', 'paid', 'on_hold', 'failed');
+  end if;
+end
+$$;
 
 -- ---------------------------------------------------------------------------
 -- Shared helper functions
@@ -36,10 +43,9 @@ create type public.payout_status as enum ('scheduled', 'paid', 'on_hold', 'faile
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
-set search_path = ''
 as $$
 begin
-  new.updated_at := pg_catalog.now();
+  new.updated_at := now();
   return new;
 end;
 $$;
@@ -48,16 +54,15 @@ create or replace function public.generate_booking_reference()
 returns text
 language plpgsql
 volatile
-set search_path = ''
 as $$
 declare
   alphabet constant text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   result text := 'JS-';
 begin
   for i in 1..6 loop
-    result := result || pg_catalog.substr(
+    result := result || substr(
       alphabet,
-      1 + pg_catalog.floor(pg_catalog.random() * pg_catalog.length(alphabet))::int,
+      1 + floor(random() * length(alphabet))::int,
       1
     );
   end loop;
@@ -69,7 +74,7 @@ $$;
 -- Accounts
 -- ---------------------------------------------------------------------------
 
-create table public.profiles (
+create table if not exists public.profiles (
   id uuid primary key default gen_random_uuid(),
   email text not null,
   password_hash text not null,
@@ -83,17 +88,18 @@ create table public.profiles (
   constraint profiles_password_hash_format
     check (password_hash ~ '^\$2[aby]\$'),
   constraint profiles_full_name_length
-    check (pg_catalog.char_length(full_name) between 1 and 120)
+    check (char_length(full_name) between 1 and 120)
 );
 
-create unique index profiles_email_lower_key on public.profiles (lower(email));
-create index profiles_role_idx on public.profiles (role);
+create unique index if not exists profiles_email_lower_key on public.profiles (lower(email));
+create index if not exists profiles_role_idx on public.profiles (role);
 
+drop trigger if exists profiles_set_updated_at on public.profiles;
 create trigger profiles_set_updated_at
 before update on public.profiles
 for each row execute function public.set_updated_at();
 
-create table public.hosts (
+create table if not exists public.hosts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references public.profiles (id) on delete set null,
   seed_key text unique,
@@ -102,12 +108,13 @@ create table public.hosts (
   superhost boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint hosts_name_length check (pg_catalog.char_length(name) between 1 and 120),
+  constraint hosts_name_length check (char_length(name) between 1 and 120),
   constraint hosts_joined_year check (joined_year between 2000 and 2100)
 );
 
-create unique index hosts_user_id_key on public.hosts (user_id) where user_id is not null;
+create unique index if not exists hosts_user_id_key on public.hosts (user_id) where user_id is not null;
 
+drop trigger if exists hosts_set_updated_at on public.hosts;
 create trigger hosts_set_updated_at
 before update on public.hosts
 for each row execute function public.set_updated_at();
@@ -116,7 +123,7 @@ for each row execute function public.set_updated_at();
 -- Catalogue
 -- ---------------------------------------------------------------------------
 
-create table public.properties (
+create table if not exists public.properties (
   id uuid primary key default gen_random_uuid(),
   legacy_id integer unique,
   host_id uuid not null references public.hosts (id) on delete restrict,
@@ -143,23 +150,24 @@ create table public.properties (
   constraint properties_slug_format check (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
   constraint properties_type_check
     check (type in ('hotel', 'apartment', 'airbnb', 'shortlet', 'guesthouse')),
-  constraint properties_name_length check (pg_catalog.char_length(name) between 1 and 160),
-  constraint properties_summary_length check (pg_catalog.char_length(summary) between 1 and 400),
+  constraint properties_name_length check (char_length(name) between 1 and 160),
+  constraint properties_summary_length check (char_length(summary) between 1 and 400),
   constraint properties_description_length
-    check (pg_catalog.char_length(description) between 1 and 6000)
+    check (char_length(description) between 1 and 6000)
 );
 
-create index properties_published_idx on public.properties (is_published);
-create index properties_area_idx on public.properties (area) where is_published;
-create index properties_type_idx on public.properties (type) where is_published;
-create index properties_price_idx on public.properties (price) where is_published;
-create index properties_rating_idx on public.properties (rating desc) where is_published;
+create index if not exists properties_published_idx on public.properties (is_published);
+create index if not exists properties_area_idx on public.properties (area) where is_published;
+create index if not exists properties_type_idx on public.properties (type) where is_published;
+create index if not exists properties_price_idx on public.properties (price) where is_published;
+create index if not exists properties_rating_idx on public.properties (rating desc) where is_published;
 
+drop trigger if exists properties_set_updated_at on public.properties;
 create trigger properties_set_updated_at
 before update on public.properties
 for each row execute function public.set_updated_at();
 
-create table public.property_images (
+create table if not exists public.property_images (
   id uuid primary key default gen_random_uuid(),
   property_id uuid not null references public.properties (id) on delete cascade,
   url text not null,
@@ -170,9 +178,9 @@ create table public.property_images (
   constraint property_images_property_position_key unique (property_id, position)
 );
 
-create index property_images_property_idx on public.property_images (property_id, position);
+create index if not exists property_images_property_idx on public.property_images (property_id, position);
 
-create table public.rooms (
+create table if not exists public.rooms (
   id uuid primary key default gen_random_uuid(),
   property_id uuid not null references public.properties (id) on delete cascade,
   code text not null,
@@ -188,28 +196,29 @@ create table public.rooms (
   constraint rooms_code_format check (code ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$')
 );
 
-create index rooms_property_idx on public.rooms (property_id);
+create index if not exists rooms_property_idx on public.rooms (property_id);
 
+drop trigger if exists rooms_set_updated_at on public.rooms;
 create trigger rooms_set_updated_at
 before update on public.rooms
 for each row execute function public.set_updated_at();
 
-create table public.amenities (
+create table if not exists public.amenities (
   id text primary key,
   label text not null,
   constraint amenities_id_format check (id ~ '^[a-zA-Z0-9]+$'),
-  constraint amenities_label_length check (pg_catalog.char_length(label) between 1 and 80)
+  constraint amenities_label_length check (char_length(label) between 1 and 80)
 );
 
-create table public.property_amenities (
+create table if not exists public.property_amenities (
   property_id uuid not null references public.properties (id) on delete cascade,
   amenity_id text not null references public.amenities (id) on delete restrict,
   primary key (property_id, amenity_id)
 );
 
-create index property_amenities_amenity_idx on public.property_amenities (amenity_id);
+create index if not exists property_amenities_amenity_idx on public.property_amenities (amenity_id);
 
-create table public.property_reviews (
+create table if not exists public.property_reviews (
   id uuid primary key default gen_random_uuid(),
   property_id uuid not null references public.properties (id) on delete cascade,
   guest_name text not null,
@@ -218,19 +227,19 @@ create table public.property_reviews (
   quote text not null,
   created_at timestamptz not null default now(),
   constraint property_reviews_guest_name_length
-    check (pg_catalog.char_length(guest_name) between 1 and 120),
+    check (char_length(guest_name) between 1 and 120),
   constraint property_reviews_quote_length
-    check (pg_catalog.char_length(quote) between 1 and 1200)
+    check (char_length(quote) between 1 and 1200)
 );
 
-create index property_reviews_property_idx
+create index if not exists property_reviews_property_idx
   on public.property_reviews (property_id, reviewed_on desc);
 
 -- ---------------------------------------------------------------------------
 -- Bookings and payouts
 -- ---------------------------------------------------------------------------
 
-create table public.bookings (
+create table if not exists public.bookings (
   id uuid primary key default gen_random_uuid(),
   reference text not null unique default public.generate_booking_reference(),
   user_id uuid references public.profiles (id) on delete set null,
@@ -256,38 +265,45 @@ create table public.bookings (
   constraint bookings_date_order check (check_out > check_in),
   constraint bookings_reference_format check (reference ~ '^JS-[A-Z0-9]{6}$'),
   constraint bookings_requests_length
-    check (requests is null or pg_catalog.char_length(requests) <= 1000),
+    check (requests is null or char_length(requests) <= 1000),
   constraint bookings_guest_email_format
     check (guest_email ~* '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'),
   constraint bookings_guest_name_length
     check (
-      pg_catalog.char_length(guest_first_name) between 1 and 80
-      and pg_catalog.char_length(guest_last_name) between 1 and 80
+      char_length(guest_first_name) between 1 and 80
+      and char_length(guest_last_name) between 1 and 80
     ),
   constraint bookings_guest_phone_length
-    check (pg_catalog.char_length(guest_phone) between 7 and 32)
+    check (char_length(guest_phone) between 7 and 32)
 );
 
-create index bookings_user_idx on public.bookings (user_id, created_at desc);
-create index bookings_property_idx on public.bookings (property_id, check_in);
-create index bookings_room_idx on public.bookings (room_id, check_in);
-create index bookings_status_idx on public.bookings (status);
+create index if not exists bookings_user_idx on public.bookings (user_id, created_at desc);
+create index if not exists bookings_property_idx on public.bookings (property_id, check_in);
+create index if not exists bookings_room_idx on public.bookings (room_id, check_in);
+create index if not exists bookings_status_idx on public.bookings (status);
 
--- A room cannot be booked twice for overlapping dates. btree_gist supplies the
--- equality operator for UUIDs inside a GiST exclusion constraint.
-alter table public.bookings
-  add constraint bookings_no_overlapping_room_stay
-  exclude using gist (
-    room_id with =,
-    daterange(check_in, check_out, '[)') with &&
-  )
-  where (status in ('upcoming', 'confirmed'));
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'bookings_no_overlapping_room_stay'
+  ) then
+    alter table public.bookings
+      add constraint bookings_no_overlapping_room_stay
+      exclude using gist (
+        room_id with =,
+        daterange(check_in, check_out, '[)') with &&
+      )
+      where (status in ('upcoming', 'confirmed'));
+  end if;
+end
+$$;
 
+drop trigger if exists bookings_set_updated_at on public.bookings;
 create trigger bookings_set_updated_at
 before update on public.bookings
 for each row execute function public.set_updated_at();
 
-create table public.payouts (
+create table if not exists public.payouts (
   id uuid primary key default gen_random_uuid(),
   host_id uuid not null references public.hosts (id) on delete cascade,
   reference text not null unique,
@@ -302,8 +318,9 @@ create table public.payouts (
   constraint payouts_net_matches check (net = gross - commission)
 );
 
-create index payouts_host_idx on public.payouts (host_id, created_at desc);
+create index if not exists payouts_host_idx on public.payouts (host_id, created_at desc);
 
+drop trigger if exists payouts_set_updated_at on public.payouts;
 create trigger payouts_set_updated_at
 before update on public.payouts
 for each row execute function public.set_updated_at();

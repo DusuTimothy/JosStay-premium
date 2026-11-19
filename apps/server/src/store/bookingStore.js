@@ -1,34 +1,38 @@
 import { nightsBetween, quoteStay, toIso } from "@josstay/shared";
 import { HttpError } from "../lib/http.js";
-import { db, isSupabaseEnabled } from "../lib/supabase.js";
+import { getClient, isDatabaseEnabled, query } from "../lib/postgres.js";
 import { bookings, createReference } from "./demoStore.js";
 import { findHostByUserId } from "./hostStore.js";
 import { mapBookingRow } from "./mappers.js";
 
 const ACTIVE_STATUSES = ["upcoming", "confirmed"];
 
-const BOOKING_SELECT = `
-  id,
-  reference,
-  user_id,
-  check_in,
-  check_out,
-  guests,
-  airport_pickup,
-  payment_method,
-  requests,
-  status,
-  total,
-  currency,
-  quote,
-  cancelled_at,
-  created_at,
-  guest_first_name,
-  guest_last_name,
-  guest_email,
-  guest_phone,
-  properties ( slug, name, host_id ),
-  rooms ( code, name )
+const BOOKING_SELECT_SQL = `
+  select
+    b.id,
+    b.reference,
+    b.user_id,
+    b.check_in,
+    b.check_out,
+    b.guests,
+    b.airport_pickup,
+    b.payment_method,
+    b.requests,
+    b.status,
+    b.total,
+    b.currency,
+    b.quote,
+    b.cancelled_at,
+    b.created_at,
+    b.guest_first_name,
+    b.guest_last_name,
+    b.guest_email,
+    b.guest_phone,
+    jsonb_build_object('slug', p.slug, 'name', p.name, 'host_id', p.host_id) as properties,
+    jsonb_build_object('code', r.code, 'name', r.name) as rooms
+  from public.bookings b
+  join public.properties p on p.id = b.property_id
+  join public.rooms r on r.id = b.room_id
 `;
 
 const isActive = (status) => ACTIVE_STATUSES.includes(status);
@@ -95,7 +99,7 @@ export const createBookingRecord = async ({ userId, context, payload }) => {
     airportPickup: payload.airportPickup,
   });
 
-  if (!isSupabaseEnabled) {
+  if (!isDatabaseEnabled) {
     if (overlapsDemoBooking(context, room, payload)) {
       throw new HttpError(409, "Those dates are no longer available");
     }
@@ -128,40 +132,61 @@ export const createBookingRecord = async ({ userId, context, payload }) => {
     throw new HttpError(503, "Booking service is temporarily unavailable");
   }
 
-  const row = {
-    user_id: userId,
-    property_id: context.dbId,
-    room_id: room.dbId,
-    check_in: payload.checkIn,
-    check_out: payload.checkOut,
-    guests: payload.guests,
-    airport_pickup: payload.airportPickup,
-    payment_method: payload.paymentMethod,
-    requests: payload.requests ?? null,
-    guest_first_name: payload.guest.firstName,
-    guest_last_name: payload.guest.lastName,
-    guest_email: payload.guest.email,
-    guest_phone: payload.guest.phone,
-    status: "upcoming",
-    total: quote.total,
-    quote,
-  };
-
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const { data, error } = await db()
-      .from("bookings")
-      .insert(row)
-      .select(BOOKING_SELECT)
-      .single();
+    const client = await getClient();
+    try {
+      await client.query("begin");
+      const insert = await client.query(
+        `insert into public.bookings (
+          user_id, property_id, room_id, check_in, check_out, guests,
+          airport_pickup, payment_method, requests,
+          guest_first_name, guest_last_name, guest_email, guest_phone,
+          status, total, currency, quote
+        ) values (
+          $1::uuid, $2::uuid, $3::uuid, $4::date, $5::date, $6::int,
+          $7::boolean, $8::public.payment_method, $9::text,
+          $10::text, $11::text, $12::text, $13::text,
+          'upcoming', $14::int, 'NGN', $15::jsonb
+        )
+        returning id`,
+        [
+          userId,
+          context.dbId,
+          room.dbId,
+          payload.checkIn,
+          payload.checkOut,
+          payload.guests,
+          payload.airportPickup,
+          payload.paymentMethod,
+          payload.requests ?? null,
+          payload.guest.firstName,
+          payload.guest.lastName,
+          payload.guest.email,
+          payload.guest.phone,
+          quote.total,
+          JSON.stringify(quote),
+        ],
+      );
 
-    if (!error) return mapBookingRow(data);
-
-    if (error.code === "23505") continue;
-    if (error.code === "23P01") {
-      throw new HttpError(409, "Those dates are no longer available");
+      const bookingId = insert.rows[0]?.id;
+      const { rows } = await client.query(
+        `${BOOKING_SELECT_SQL} where b.id = $1::uuid limit 1`,
+        [bookingId],
+      );
+      await client.query("commit");
+      return mapBookingRow(rows[0]);
+    } catch (error) {
+      try {
+        await client.query("rollback");
+      } catch {}
+      if (error?.code === "23505") continue;
+      if (error?.code === "23P01") {
+        throw new HttpError(409, "Those dates are no longer available");
+      }
+      throw new HttpError(503, "Booking service is temporarily unavailable");
+    } finally {
+      client.release();
     }
-
-    throw new HttpError(503, "Booking service is temporarily unavailable");
   }
 
   throw new HttpError(503, "Could not allocate a booking reference. Try again.");
@@ -172,51 +197,53 @@ const demoVisibleBookings = (auth) => {
   return bookings.filter((booking) => String(booking.userId) === String(auth.userId));
 };
 
-export const listBookingRecords = async (auth, query = {}) => {
-  if (!isSupabaseEnabled) {
+export const listBookingRecords = async (auth, queryParams = {}) => {
+  if (!isDatabaseEnabled) {
     return demoVisibleBookings(auth).filter(
-      (booking) => !query.status || booking.status === query.status,
+      (booking) => !queryParams.status || booking.status === queryParams.status,
     );
   }
 
-  let request = db()
-    .from("bookings")
-    .select(BOOKING_SELECT)
-    .order("created_at", { ascending: false })
-    .limit(100);
+  try {
+    const params = [];
+    const where = [];
 
-  if (query.status) request = request.eq("status", query.status);
-
-  if (auth.role === "host") {
-    const host = await findHostByUserId(auth.userId);
-    if (!host) return [];
-
-    const { data: properties, error: propertyError } = await db()
-      .from("properties")
-      .select("id")
-      .eq("host_id", host.id);
-
-    if (propertyError) {
-      throw new HttpError(503, "Booking service is temporarily unavailable");
+    if (queryParams.status) {
+      params.push(queryParams.status);
+      where.push(`b.status = $${params.length}::public.booking_status`);
     }
 
-    const propertyIds = (properties || []).map((property) => property.id);
-    if (!propertyIds.length) return [];
-    request = request.in("property_id", propertyIds);
-  } else if (auth.role !== "admin") {
-    request = request.eq("user_id", auth.userId);
-  }
+    if (auth.role === "host") {
+      const host = await findHostByUserId(auth.userId);
+      if (!host) return [];
 
-  const { data, error } = await request;
-  if (error) {
+      const { rows: properties } = await query(
+        `select id from public.properties where host_id = $1::uuid`,
+        [host.id],
+      );
+      const propertyIds = properties.map((property) => property.id);
+      if (!propertyIds.length) return [];
+
+      params.push(propertyIds);
+      where.push(`b.property_id = any($${params.length}::uuid[])`);
+    } else if (auth.role !== "admin") {
+      params.push(auth.userId);
+      where.push(`b.user_id = $${params.length}::uuid`);
+    }
+
+    let sql = `${BOOKING_SELECT_SQL}`;
+    if (where.length) sql += ` where ${where.join(" and ")}`;
+    sql += " order by b.created_at desc limit 100";
+
+    const { rows } = await query(sql, params);
+    return rows.map(mapBookingRow);
+  } catch {
     throw new HttpError(503, "Booking service is temporarily unavailable");
   }
-
-  return (data || []).map(mapBookingRow);
 };
 
 export const cancelBookingRecord = async (reference, auth) => {
-  if (!isSupabaseEnabled) {
+  if (!isDatabaseEnabled) {
     const booking = bookings.find((entry) => entry.reference === reference);
     if (!booking) throw new HttpError(404, "Booking not found");
 
@@ -233,53 +260,54 @@ export const cancelBookingRecord = async (reference, auth) => {
     return booking;
   }
 
-  const { data: booking, error } = await db()
-    .from("bookings")
-    .select(BOOKING_SELECT)
-    .eq("reference", reference)
-    .maybeSingle();
+  try {
+    const { rows } = await query(
+      `${BOOKING_SELECT_SQL} where b.reference = $1 limit 1`,
+      [reference],
+    );
+    const booking = rows[0];
+    if (!booking) throw new HttpError(404, "Booking not found");
 
-  if (error) {
-    throw new HttpError(503, "Booking service is temporarily unavailable");
-  }
-  if (!booking) throw new HttpError(404, "Booking not found");
+    let authorised = auth.role === "admin";
 
-  let authorised = auth.role === "admin";
+    if (!authorised && String(booking.user_id) === String(auth.userId)) {
+      authorised = true;
+    }
 
-  if (!authorised && String(booking.user_id) === String(auth.userId)) {
-    authorised = true;
-  }
+    if (!authorised && auth.role === "host") {
+      const host = await findHostByUserId(auth.userId);
+      const bookingProperty = Array.isArray(booking.properties)
+        ? booking.properties[0]
+        : booking.properties;
+      authorised = Boolean(host && bookingProperty?.host_id === host.id);
+    }
 
-  if (!authorised && auth.role === "host") {
-    const host = await findHostByUserId(auth.userId);
-    const bookingProperty = Array.isArray(booking.properties)
-      ? booking.properties[0]
-      : booking.properties;
-    authorised = Boolean(host && bookingProperty?.host_id === host.id);
-  }
-
-  if (!authorised) throw new HttpError(404, "Booking not found");
-  if (!isActive(booking.status)) {
-    throw new HttpError(409, "Only upcoming bookings can be cancelled");
-  }
-
-  const { data, error: updateError } = await db()
-    .from("bookings")
-    .update({
-      status: "cancelled",
-      cancelled_at: new Date().toISOString(),
-    })
-    .eq("id", booking.id)
-    .in("status", ACTIVE_STATUSES)
-    .select(BOOKING_SELECT)
-    .single();
-
-  if (updateError) {
-    if (updateError.code === "PGRST116") {
+    if (!authorised) throw new HttpError(404, "Booking not found");
+    if (!isActive(booking.status)) {
       throw new HttpError(409, "Only upcoming bookings can be cancelled");
     }
+
+    const updated = await query(
+      `update public.bookings
+       set status = 'cancelled'::public.booking_status,
+           cancelled_at = now()
+       where id = $1::uuid
+         and status in ('upcoming', 'confirmed')
+       returning id`,
+      [booking.id],
+    );
+
+    if (!updated.rows[0]) {
+      throw new HttpError(409, "Only upcoming bookings can be cancelled");
+    }
+
+    const { rows: freshRows } = await query(
+      `${BOOKING_SELECT_SQL} where b.id = $1::uuid limit 1`,
+      [booking.id],
+    );
+    return mapBookingRow(freshRows[0]);
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
     throw new HttpError(503, "Booking service is temporarily unavailable");
   }
-
-  return mapBookingRow(data);
 };

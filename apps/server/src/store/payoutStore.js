@@ -1,5 +1,5 @@
 import { HttpError } from "../lib/http.js";
-import { db, isSupabaseEnabled } from "../lib/supabase.js";
+import { isDatabaseEnabled, query } from "../lib/postgres.js";
 import { findHostByUserId } from "./hostStore.js";
 import { mapPayoutRow } from "./mappers.js";
 
@@ -34,7 +34,7 @@ const totalsFor = (payouts) => ({
 });
 
 export const getPayoutRecords = async (auth) => {
-  if (!isSupabaseEnabled) {
+  if (!isDatabaseEnabled) {
     return {
       data: DEMO_PAYOUTS,
       totals: totalsFor(DEMO_PAYOUTS),
@@ -42,33 +42,38 @@ export const getPayoutRecords = async (auth) => {
     };
   }
 
-  let request = db()
-    .from("payouts")
-    .select("reference, gross, commission, net, status, scheduled_for, created_at")
-    .order("created_at", { ascending: false })
-    .limit(100);
+  try {
+    let sql = `
+      select reference, gross, commission, net, status, scheduled_for, created_at
+      from public.payouts
+    `;
+    const params = [];
+    const where = [];
 
-  if (auth.role !== "admin") {
-    const host = await findHostByUserId(auth.userId);
-    if (!host) {
-      return {
-        data: [],
-        totals: { gross: 0, net: 0, currency: "NGN" },
-        sampleData: false,
-      };
+    if (auth.role !== "admin") {
+      const host = await findHostByUserId(auth.userId);
+      if (!host) {
+        return {
+          data: [],
+          totals: { gross: 0, net: 0, currency: "NGN" },
+          sampleData: false,
+        };
+      }
+      params.push(host.id);
+      where.push(`host_id = $${params.length}::uuid`);
     }
-    request = request.eq("host_id", host.id);
-  }
 
-  const { data, error } = await request;
-  if (error) {
+    if (where.length) sql += ` where ${where.join(" and ")}`;
+    sql += " order by created_at desc limit 100";
+
+    const { rows } = await query(sql, params);
+    const payouts = rows.map(mapPayoutRow);
+    return {
+      data: payouts,
+      totals: totalsFor(payouts),
+      sampleData: false,
+    };
+  } catch {
     throw new HttpError(503, "Payout service is temporarily unavailable");
   }
-
-  const payouts = (data || []).map(mapPayoutRow);
-  return {
-    data: payouts,
-    totals: totalsFor(payouts),
-    sampleData: false,
-  };
 };

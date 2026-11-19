@@ -1,18 +1,18 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
-import { createClient } from "@supabase/supabase-js";
+import { checkDatabaseConnection, closeDatabase, query } from "../src/lib/postgres.js";
+import { USES_DATABASE } from "../src/config/env.js";
 
-const url = process.env.SUPABASE_URL?.trim();
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+if (!USES_DATABASE) {
+  console.error("DATA_BACKEND must be 'postgres' to create a database user.");
+  process.exit(1);
+}
+
 const email = process.env.USER_EMAIL?.trim().toLowerCase();
 const password = process.env.USER_PASSWORD || "";
 const name = process.env.USER_NAME?.trim() || email?.split("@")[0];
 const role = process.env.USER_ROLE?.trim() || "guest";
 
-if (!url || !serviceRoleKey) {
-  console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.");
-  process.exit(1);
-}
 if (!email || !name) {
   console.error("Set USER_EMAIL and USER_NAME.");
   process.exit(1);
@@ -26,65 +26,53 @@ if (!["guest", "host", "admin"].includes(role)) {
   process.exit(1);
 }
 
-const supabase = createClient(url, serviceRoleKey, {
-  auth: { autoRefreshToken: false, detectSessionInUrl: false, persistSession: false },
-});
-
 const run = async () => {
+  const check = await checkDatabaseConnection();
+  if (!check.ok) {
+    throw new Error(`Database connection failed: ${check.reason}`);
+  }
+
   const passwordHash = await bcrypt.hash(password, 12);
 
-  const { data: existing, error: lookupError } = await supabase
-    .from("profiles")
-    .select("id, email")
-    .eq("email", email)
-    .maybeSingle();
-  if (lookupError) throw new Error(lookupError.message);
+  const existing = await query(
+    "select id, email from public.profiles where lower(email) = lower($1) limit 1",
+    [email],
+  );
 
   let profile;
-
-  if (existing) {
-    const { data, error } = await supabase
-      .from("profiles")
-      .update({ password_hash: passwordHash, full_name: name, role })
-      .eq("id", existing.id)
-      .select("id, email, full_name, role")
-      .single();
-    if (error) throw new Error(error.message);
-    profile = data;
+  if (existing.rows[0]) {
+    const updated = await query(
+      `update public.profiles
+       set password_hash = $1, full_name = $2, role = $3::public.user_role
+       where id = $4::uuid
+       returning id, email, full_name, role`,
+      [passwordHash, name, role, existing.rows[0].id],
+    );
+    profile = updated.rows[0];
     console.log(`Updated ${profile.email} (${profile.role}).`);
   } else {
-    const { data, error } = await supabase
-      .from("profiles")
-      .insert({
-        email,
-        password_hash: passwordHash,
-        full_name: name,
-        role,
-      })
-      .select("id, email, full_name, role")
-      .single();
-    if (error) throw new Error(error.message);
-    profile = data;
+    const created = await query(
+      `insert into public.profiles (email, password_hash, full_name, role)
+       values ($1, $2, $3, $4::public.user_role)
+       returning id, email, full_name, role`,
+      [email, passwordHash, name, role],
+    );
+    profile = created.rows[0];
     console.log(`Created ${profile.email} (${profile.role}).`);
   }
 
   if (role === "host") {
-    const { data: host, error: hostError } = await supabase
-      .from("hosts")
-      .select("id")
-      .eq("user_id", profile.id)
-      .maybeSingle();
-    if (hostError) throw new Error(hostError.message);
+    const host = await query(
+      "select id from public.hosts where user_id = $1::uuid limit 1",
+      [profile.id],
+    );
 
-    if (!host) {
-      const { error } = await supabase.from("hosts").insert({
-        user_id: profile.id,
-        seed_key: `user-${profile.id}`,
-        name,
-        joined_year: new Date().getFullYear(),
-        superhost: false,
-      });
-      if (error) throw new Error(error.message);
+    if (!host.rows[0]) {
+      await query(
+        `insert into public.hosts (user_id, seed_key, name, joined_year, superhost)
+         values ($1::uuid, $2, $3, $4, false)`,
+        [profile.id, `user-${profile.id}`, name, new Date().getFullYear()],
+      );
       console.log("Linked a new host profile.");
     }
   }
@@ -92,7 +80,11 @@ const run = async () => {
   console.log("Done. The password was written as a bcrypt hash and is not printed.");
 };
 
-run().catch((error) => {
-  console.error("[create-user] Failed:", error.message);
-  process.exit(1);
-});
+run()
+  .catch((error) => {
+    console.error("[create-user] Failed:", error.message);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await closeDatabase();
+  });

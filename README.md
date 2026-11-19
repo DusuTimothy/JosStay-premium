@@ -56,7 +56,7 @@ npm start
 - Calendar selection updates nightly totals, fees, pickup and bundle discounts live.
 - Search filters visibly update results; list/map toggle, empty, loading and error states are included.
 - Mock card payment succeeds for any 16-digit number; a card ending in `0000` triggers the failure/retry state.
-- Bookings and drafts persist in `localStorage` for the clickable demo; the API persists to Supabase Postgres when configured.
+- Bookings and drafts persist in `localStorage` for the clickable demo; the API persists to PostgreSQL when configured.
 - 10 sample Jos properties from ₦10,000 to ₦150,000 per night, all marked as sample data.
 
 ## Monorepo layout
@@ -64,16 +64,16 @@ npm start
 ```
 apps/
   client/        Next.js 14 App Router + Tailwind CSS
-  server/        Express REST API (helmet, cors, zod, bcryptjs, Supabase)
+  server/        Express REST API (helmet, cors, zod, bcryptjs, pg, redis)
 packages/
   shared/        Sample properties, reviews, quote helpers, formatting
-supabase/
-  migrations/    Postgres schema, RLS policies and least-privilege grants
+db/
+  migrations/    PostgreSQL schema and security migrations
 docs/
   BUILD_PLAN.md     Daily plan (18–21 Nov 2026) + social posts
   DESIGN_SYSTEM.md  Colours, type, components, interaction rules
   ARCHITECTURE.md   Routes, API, RBAC, deployment
-  SUPABASE_SETUP.md Project setup, migrations, seeding and security model
+  AIVEN_SETUP.md    Aiven PostgreSQL/Redis setup, migrations, seeding and security
   SAMPLE_DATA.md    The 10 listings and data conventions
 ```
 
@@ -95,30 +95,30 @@ docs/
 | GET | `/api/host/payouts` | Bearer `host`/`admin` | Payouts for the signed-in host |
 
 Protected routes use `Authorization: Bearer <token>`. Roles come from the signed
-JWT; the old `x-role` header is no longer accepted. Registration always creates a
-`guest`; create trusted hosts/admins with the server script.
+JWT. Registration always creates a `guest`; create trusted hosts/admins with the
+server script.
 
-The server runs on an in-memory demo store by default. Set `DATA_BACKEND=supabase`
-with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to persist to Supabase
-Postgres, where RLS, least-privilege grants and a room over-booking constraint are
-enforced. Production fails closed if Supabase/JWT secrets are missing. See
-[Supabase setup & security](docs/SUPABASE_SETUP.md).
+The server runs on an in-memory demo store by default. Set `DATA_BACKEND=postgres`
+with PostgreSQL connection variables (and Aiven CA certificate path when required)
+to persist to PostgreSQL. Redis can be configured via `REDIS_URL` and
+`REDIS_CA_CERT_PATH`. Production fails closed if PostgreSQL/JWT secrets are
+missing. See [Aiven setup & security](docs/AIVEN_SETUP.md).
 
 ## Documentation
 
 - [Build plan & social posts](docs/BUILD_PLAN.md)
 - [Design system](docs/DESIGN_SYSTEM.md)
 - [Architecture](docs/ARCHITECTURE.md)
-- [Supabase setup & security](docs/SUPABASE_SETUP.md)
+- [Aiven setup & security](docs/AIVEN_SETUP.md)
 - [Sample data](docs/SAMPLE_DATA.md)
 
 ## Notes
 
-> All listings, reviews, hosts, references, payouts and fares are **sample data**. No real payment is taken. Replace `packages/shared/data.js` with real inventory and follow [Supabase setup](docs/SUPABASE_SETUP.md) before launch.
+> All listings, reviews, hosts, references, payouts and fares are **sample data**. No real payment is taken. Replace `packages/shared/data.js` with real inventory and follow [Aiven setup](docs/AIVEN_SETUP.md) before launch.
 
 ## Deployment
 
 - **Client:** Vercel — set `NEXT_PUBLIC_API_URL`.
-- **Server:** Render — set `NODE_ENV=production`, `DATA_BACKEND=supabase`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CLIENT_ORIGIN`, `TRUST_PROXY=1`, `JWT_SECRET`, and the integration keys.
-- **Database:** Supabase Postgres with RLS, backups and SSL enforcement.
-- **Cache:** Redis (Render/Upstash).
+- **Server:** Render/Node host — set `NODE_ENV=production`, `DATA_BACKEND=postgres`, database/Redis connection vars, CA cert paths, `CLIENT_ORIGIN`, `TRUST_PROXY=1`, `JWT_SECRET`, and integration keys.
+- **Database:** Aiven for PostgreSQL with TLS CA verification, backups, and migrations in `db/migrations/`.
+- **Cache:** Aiven for Redis/Valkey with TLS CA verification.

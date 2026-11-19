@@ -6,10 +6,23 @@ const RawEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   CLIENT_ORIGIN: z.string().optional().default("http://localhost:3000"),
-  DATA_BACKEND: z.enum(["demo", "supabase"]).optional(),
-  SUPABASE_URL: z.string().optional().default(""),
-  SUPABASE_ANON_KEY: z.string().optional().default(""),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().optional().default(""),
+  DATA_BACKEND: z.enum(["demo", "postgres", "supabase"]).optional(),
+
+  // Aiven / PostgreSQL
+  DATABASE_URL: z.string().optional().default(""),
+  PGHOST: z.string().optional().default(""),
+  PGPORT: z.coerce.number().int().min(1).max(65535).optional(),
+  PGDATABASE: z.string().optional().default(""),
+  PGUSER: z.string().optional().default(""),
+  PGPASSWORD: z.string().optional().default(""),
+  DATABASE_CA_CERT_PATH: z.string().optional().default(""),
+  DATABASE_SSL_REJECT_UNAUTHORIZED: z.string().optional().default(""),
+
+  // Redis (Aiven)
+  REDIS_URL: z.string().optional().default(""),
+  REDIS_CA_CERT_PATH: z.string().optional().default(""),
+  REDIS_TLS_REJECT_UNAUTHORIZED: z.string().optional().default(""),
+
   JWT_SECRET: z.string().optional().default(""),
   JWT_EXPIRES_IN: z.string().optional().default("7d"),
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
@@ -32,43 +45,65 @@ export const IS_PRODUCTION = NODE_ENV === "production";
 export const PORT = raw.PORT;
 
 const clean = (value) => String(value || "").trim();
+const cleanBool = (value, fallback = true) => {
+  const text = clean(value).toLowerCase();
+  if (!text) return fallback;
+  if (["1", "true", "yes", "on"].includes(text)) return true;
+  if (["0", "false", "no", "off"].includes(text)) return false;
+  return fallback;
+};
 
-export const SUPABASE_URL = clean(raw.SUPABASE_URL).replace(/\/+$/, "");
-export const SUPABASE_ANON_KEY = clean(raw.SUPABASE_ANON_KEY);
-export const SUPABASE_SERVICE_ROLE_KEY = clean(raw.SUPABASE_SERVICE_ROLE_KEY);
+export const DATABASE_URL = clean(raw.DATABASE_URL);
+export const PGHOST = clean(raw.PGHOST);
+export const PGPORT = raw.PGPORT;
+export const PGDATABASE = clean(raw.PGDATABASE);
+export const PGUSER = clean(raw.PGUSER);
+export const PGPASSWORD = raw.PGPASSWORD;
+export const DATABASE_CA_CERT_PATH = clean(raw.DATABASE_CA_CERT_PATH);
+export const DATABASE_SSL_REJECT_UNAUTHORIZED = cleanBool(
+  raw.DATABASE_SSL_REJECT_UNAUTHORIZED,
+  true,
+);
 
-const hasSupabaseCredentials = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
+export const REDIS_URL = clean(raw.REDIS_URL);
+export const REDIS_CA_CERT_PATH = clean(raw.REDIS_CA_CERT_PATH);
+export const REDIS_TLS_REJECT_UNAUTHORIZED = cleanBool(
+  raw.REDIS_TLS_REJECT_UNAUTHORIZED,
+  true,
+);
 
-const isHttpsSupabaseUrl = /^https:\/\/[a-z0-9.-]+$/i.test(SUPABASE_URL);
-const isLocalSupabaseUrl =
-  !IS_PRODUCTION &&
-  /^http:\/\/(localhost|127\.0\.0\.1)(:\d{2,5})?$/.test(SUPABASE_URL);
+const hasDatabaseConfig = Boolean(
+  DATABASE_URL || (PGHOST && PGDATABASE && PGUSER),
+);
 
-if (SUPABASE_URL && !isHttpsSupabaseUrl && !isLocalSupabaseUrl) {
+const backendInput = raw.DATA_BACKEND === "supabase" ? "postgres" : raw.DATA_BACKEND;
+export const DATA_BACKEND = backendInput || (hasDatabaseConfig ? "postgres" : "demo");
+export const USES_DATABASE = DATA_BACKEND === "postgres";
+export const HAS_DATABASE_CONFIG = hasDatabaseConfig;
+export const HAS_REDIS_CONFIG = Boolean(REDIS_URL);
+
+
+
+if (raw.DATA_BACKEND === "postgres" && !hasDatabaseConfig) {
   throw new Error(
-    "SUPABASE_URL must be an https:// project URL (http://localhost is allowed in development)",
+    "DATA_BACKEND=postgres requires DATABASE_URL or PGHOST/PGDATABASE/PGUSER (and password/cert as needed)",
   );
 }
 
-if (raw.DATA_BACKEND === "supabase" && !hasSupabaseCredentials) {
+if (IS_PRODUCTION && !USES_DATABASE) {
   throw new Error(
-    "DATA_BACKEND=supabase requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY",
+    "Production must use Postgres persistence. Set DATA_BACKEND=postgres and database connection variables.",
   );
 }
 
-export const DATA_BACKEND =
-  raw.DATA_BACKEND || (hasSupabaseCredentials ? "supabase" : "demo");
-
-export const USES_SUPABASE = DATA_BACKEND === "supabase";
-
-if (IS_PRODUCTION && !USES_SUPABASE) {
-  throw new Error(
-    "Production must use Supabase persistence. Set DATA_BACKEND=supabase, SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
-  );
+if (IS_PRODUCTION && !hasDatabaseConfig) {
+  throw new Error("Production requires PostgreSQL connection configuration");
 }
 
-if (USES_SUPABASE && !hasSupabaseCredentials) {
-  throw new Error("Supabase persistence is selected but credentials are missing");
+if (IS_PRODUCTION && !HAS_REDIS_CONFIG) {
+  console.warn(
+    "[startup] REDIS_URL is not set in production. Redis-backed features/caching will be unavailable until configured.",
+  );
 }
 
 const configuredJwtSecret = clean(raw.JWT_SECRET);
@@ -108,6 +143,6 @@ if (IS_PRODUCTION && corsOrigins.includes("*")) {
 
 if (IS_PRODUCTION && TRUST_PROXY === 0) {
   console.warn(
-    "[security] TRUST_PROXY is 0 in production. Set it to 1 if the API runs behind Render/a load balancer.",
+    "[security] TRUST_PROXY is 0 in production. Set it to 1 if the API runs behind a load balancer.",
   );
 }

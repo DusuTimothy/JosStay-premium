@@ -9,10 +9,13 @@ JosStay-premium/
 │   └── server/          Express REST API (Node.js, ESM)
 ├── packages/
 │   └── shared/          Sample data, amenity labels, currency helpers
+├── db/
+│   └── migrations/      PostgreSQL schema and security migrations
 ├── docs/
 │   ├── BUILD_PLAN.md
 │   ├── DESIGN_SYSTEM.md
 │   ├── ARCHITECTURE.md
+│   ├── AIVEN_SETUP.md
 │   └── SAMPLE_DATA.md
 ├── package.json         npm workspaces + dev scripts
 └── README.md
@@ -58,8 +61,8 @@ JosStay-premium/
 
 **Data**
 - The client demo reads from `packages/shared/data.js` and `localStorage`.
-- The Express API uses an in-memory store locally and Supabase Postgres when
-  `DATA_BACKEND=supabase`.
+- The Express API uses an in-memory store locally and PostgreSQL when
+  `DATA_BACKEND=postgres`.
 
 ## Server (Express)
 
@@ -78,13 +81,10 @@ PATCH /api/bookings/:reference/cancel
 GET   /api/host/payouts            Bearer host/admin
 ```
 
-- **Persistence:** Supabase Postgres. Migrations live in `supabase/migrations/`;
-  the API uses the service-role key server-side only.
-- **Security:** RLS with default deny, least-privilege grants, signed JWTs,
-  object-level booking authorization, bcrypt cost 12, Helmet, strict CORS,
-  rate limits, 100 kB JSON limit, Zod validation, request IDs, and a room
-  over-booking exclusion constraint. See `docs/SUPABASE_SETUP.md`.
-- **Integrations (planned):** Paystack (payments), Brevo (email), WhatsApp Cloud API, Google OAuth, LLM concierge service, Redis caching.
+- **Persistence:** Aiven for PostgreSQL (or compatible Postgres). Migrations live in `db/migrations/`; apply with `npm --workspace @josstay/server run db:migrate`.
+- **Cache/ephemeral services:** Aiven for Redis/Valkey configured via `REDIS_URL` and TLS CA certificate path.
+- **Security:** parameterized SQL, server-calculated booking totals, bcrypt cost 12+, signed JWTs, object-level authorization, Helmet, strict CORS, rate limits, 100 kB JSON limit, Zod validation, request IDs, and a room over-booking exclusion constraint. RLS is enabled as defense-in-depth. See `docs/AIVEN_SETUP.md`.
+- **Integrations (planned):** Paystack (payments), Brevo (email), WhatsApp Cloud API, Google OAuth, LLM concierge service.
 
 ## Roles (RBAC)
 | Role | Access |
@@ -94,15 +94,14 @@ GET   /api/host/payouts            Bearer host/admin
 | `admin` | All host access + verification, refunds, moderation |
 
 ## Environments
-- `apps/client/.env.local` — `NEXT_PUBLIC_API_URL`
+- `apps/client/.env.local` — `NEXT_PUBLIC_API_URL` (and client-safe public keys only)
 - `apps/server/.env` — `NODE_ENV`, `PORT`, `CLIENT_ORIGIN`, `DATA_BACKEND`,
-  `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `JWT_SECRET`,
-  `REDIS_URL`, `PAYSTACK_SECRET_KEY`, `BREVO_API_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` is server-only and must never use a `NEXT_PUBLIC_*`
-  prefix.
+  `DATABASE_URL`/`PG*`, `DATABASE_CA_CERT_PATH`, `REDIS_URL`, `REDIS_CA_CERT_PATH`,
+  `JWT_SECRET`, and integration secrets
+- Database credentials, Redis credentials, CA-private material (if applicable), and service secrets must never use a `NEXT_PUBLIC_*` prefix.
 
 ## Deployment
 - **Client:** Vercel (Next.js).
-- **Server:** Render (Node web service).
-- **Database:** Supabase Postgres.
-- **Cache:** Redis (Render/Upstash).
+- **Server:** Render or another Node host.
+- **Database:** Aiven for PostgreSQL.
+- **Cache:** Aiven for Redis/Valkey.

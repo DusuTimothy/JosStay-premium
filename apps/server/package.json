@@ -7,13 +7,13 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "db:seed": "node scripts/seed-supabase.js",
+    "db:migrate": "node scripts/migrate.js",
+    "db:seed": "node scripts/seed.js",
     "db:create-user": "node scripts/create-user.js",
-    "db:verify": "node scripts/verify-supabase.js"
+    "db:verify": "node scripts/verify-db.js"
   },
   "dependencies": {
     "@josstay/shared": "*",
-    "@supabase/supabase-js": "^2.119.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -21,6 +21,8 @@
     "express-rate-limit": "^8.7.5",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.3",
+    "pg": "^8.16.3",
+    "redis": "^5.8.2",
     "zod": "^4.6.7"
   }
 }

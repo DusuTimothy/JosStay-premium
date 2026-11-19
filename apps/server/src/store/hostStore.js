@@ -1,18 +1,19 @@
 import { HttpError } from "../lib/http.js";
-import { db, isSupabaseEnabled } from "../lib/supabase.js";
+import { isDatabaseEnabled, query } from "../lib/postgres.js";
 
 export const findHostByUserId = async (userId) => {
-  if (!isSupabaseEnabled) return null;
+  if (!isDatabaseEnabled) return null;
 
-  const { data, error } = await db()
-    .from("hosts")
-    .select("id, name")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (error) {
+  try {
+    const { rows } = await query(
+      `select id, name
+       from public.hosts
+       where user_id = $1::uuid
+       limit 1`,
+      [userId],
+    );
+    return rows[0] || null;
+  } catch {
     throw new HttpError(503, "Host service is temporarily unavailable");
   }
-
-  return data;
 };

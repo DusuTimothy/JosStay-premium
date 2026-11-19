@@ -1,8 +1,8 @@
 import { SEED_BOOKINGS } from "@josstay/shared";
 
 /* ------------------------------------------------------------------ */
-/* In-memory fallback for local demo mode. Supabase is used when       */
-/* DATA_BACKEND=supabase; see docs/SUPABASE_SETUP.md.                  */
+/* In-memory fallback for local demo mode. PostgreSQL (Aiven) is used  */
+/* when DATA_BACKEND=postgres; see docs/AIVEN_SETUP.md.                */
 /* ------------------------------------------------------------------ */
 export const bookings = SEED_BOOKINGS.map((b) => ({
   ...b,

@@ -20,12 +20,15 @@ Technology stack for building **JosStay Premium**.
 
 ## Database, ORM & Storage
 - **PostgreSQL** – Primary relational database
-- **Supabase** – Managed Postgres, migrations, backups and row level security
-- **supabase-js** – Server-side data access with the service-role key
-- **Row Level Security (RLS)** – Default-deny policies; public catalogue only
+- **Aiven for PostgreSQL** – Managed Postgres hosting with TLS/CA certificate support
+- **pg** – Node.js PostgreSQL client for parameterized queries and pooling
+- **SQL migrations** – Schema and constraint management in `db/migrations/`
+- **Row Level Security (RLS)** – Enabled as defense-in-depth alongside API authorization
 
 ## Caching
-- **Redis** – In-memory data store for caching and performance optimization
+- **Redis / Valkey** – In-memory data store for caching and performance optimization
+- **Aiven for Redis/Valkey** – Managed Redis-compatible hosting with TLS/CA certificate support
+- **redis (node-redis)** – Node.js Redis client
 
 ## Validation, Uploads & Configuration
 - **Zod** – Schema validation for request/data validation
@@ -38,6 +41,7 @@ Technology stack for building **JosStay Premium**.
 - **bcrypt** – Password hashing
 - **JWT** – Signed HS256 access tokens
 - **express-rate-limit** – API and authentication throttling
+- **TLS CA certificates** – Verified connections to Aiven PostgreSQL/Redis
 - **Google Sign-Up** – OAuth-based authentication with Google
 - **RBAC (Role-Based Access Control)** – Authorization based on user roles and permissions
 
