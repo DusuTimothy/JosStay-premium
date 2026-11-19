@@ -35,7 +35,7 @@ npm start
 | Route | Screen |
 |-------|--------|
 | `/` | Home — hero search, featured stays, popular areas, trust, reviews, bundle banner |
-| `/search` | Search results with filters, sort, loading/empty/error states |
+| `/search` | Search results with filters, sort, map toggle, loading/empty/error states |
 | `/property/[slug]` | Property detail — gallery, amenities, units, calendar, reviews, sticky booking bar |
 | `/checkout` | Guest details, airport pickup, payment method, mock Paystack flow |
 | `/confirmation/[reference]` | Booking reference, stay summary, add flight / view / share |
@@ -54,7 +54,7 @@ npm start
 - Reusable components: Button, SearchBar, PropertyCard, FilterPanel, RatingStars, Badges, CalendarPicker, PriceSummary, ReviewCard, Header/Footer, and loading/empty/error states.
 - NGN prices with an optional USD view (toggle in the header, persisted locally).
 - Calendar selection updates nightly totals, fees, pickup and bundle discounts live.
-- Search filters visibly update results; empty, loading and error states are included.
+- Search filters visibly update results; list/map toggle, empty, loading and error states are included.
 - Mock card payment succeeds for any 16-digit number; a card ending in `0000` triggers the failure/retry state.
 - Bookings and drafts persist in `localStorage`; the UI is fully clickable without a database.
 - 10 sample Jos properties from ₦10,000 to ₦150,000 per night, all marked as sample data.

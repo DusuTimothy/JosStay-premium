@@ -61,7 +61,7 @@
 **Goal:** The complete booking path from search to payment.
 
 **Tasks**
-- [x] Build Search results: property cards, sort, filters (price, type, rating, amenities, airport distance, free cancellation), filter chips.
+- [x] Build Search results: property cards, sort, filters (price, type, rating, amenities, airport distance, free cancellation), map toggle, filter chips.
 - [x] Add visible loading skeletons, empty-state recovery, and error-state retry.
 - [x] Build Property detail: editorial 1 + 4 gallery with `+N photos`, verified badge, Share/Save, host row, trust rows, amenities, room selector, single-month availability calendar, reviews, sticky gold "Reserve your stay" card.
 - [x] Make calendar and guest-stepper changes update nights and total price live.
@@ -77,6 +77,7 @@
 >
 > From search to confirmation in one connected journey:
 > 🔎 Filter by price, type, rating, amenities and distance from the airport
+> 🗺️ Toggle between list and map
 > 📅 Pick dates and watch the total update instantly
 > 💳 Choose Card, Bank transfer or USSD at checkout
 > ✅ Get a booking reference with no hidden fees

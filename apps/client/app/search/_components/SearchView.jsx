@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -16,6 +17,15 @@ import { FilterPanel, DEFAULT_FILTERS } from "@/components/shared/FilterPanel";
 import { EmptyState, ErrorState, LoadingResults } from "@/components/shared/states";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+
+const SearchMap = dynamic(() => import("./SearchMap").then((mod) => mod.SearchMap), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full min-h-[420px] w-full items-center justify-center rounded-xl border border-line bg-[#E8EDE6] text-[12px] font-medium text-muted">
+      Loading map…
+    </div>
+  ),
+});
 
 const SORTS = [
   { id: "recommended", label: "Recommended" },
@@ -53,6 +63,7 @@ export function SearchView() {
   const [sort, setSort] = useState("recommended");
   const [loading, setLoading] = useState(true);
   const [demoState, setDemoState] = useState("default");
+  const [view, setView] = useState("list");
   const [filterOpen, setFilterOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
@@ -280,7 +291,7 @@ export function SearchView() {
       </div>
 
       <div className="mt-6 flex items-center justify-between gap-4">
-        <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+        <div className="no-scrollbar -mx-1 flex min-w-0 flex-1 gap-2 overflow-x-auto px-1 pb-1">
           {TYPE_TABS.map((tab) => {
             const active =
               tab.id === "" ? filters.types.length === 0 : filters.types.includes(tab.id);
@@ -300,6 +311,20 @@ export function SearchView() {
             );
           })}
         </div>
+
+        <button
+          type="button"
+          onClick={() => setView(view === "map" ? "list" : "map")}
+          className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-[13px] font-semibold transition ${
+            view === "map"
+              ? "border-plum-700 bg-plum-700 text-white"
+              : "border-line bg-white text-ink hover:border-plum-300"
+          }`}
+          aria-pressed={view === "map"}
+        >
+          <Icon name={view === "map" ? "grid" : "pin"} className="h-4 w-4" />
+          {view === "map" ? "List view" : "Map view"}
+        </button>
       </div>
 
       <div className="mt-6 hidden lg:block">
@@ -382,8 +407,14 @@ export function SearchView() {
         </label>
       </div>
 
-      <div className="mt-2">
-        <div className="divide-y divide-line">
+      <div
+        className={
+          view === "map" && !showLoading && !showEmpty
+            ? "mt-2 grid gap-6 lg:grid-cols-[1fr_420px] xl:grid-cols-[1fr_480px]"
+            : "mt-2"
+        }
+      >
+        <div className={`divide-y divide-line ${view === "map" ? "order-2 lg:order-1" : ""}`}>
           {showError ? (
             <div className="pt-6">
               <ErrorState
@@ -415,6 +446,12 @@ export function SearchView() {
             ))
           )}
         </div>
+
+        {view === "map" && !showLoading && !showEmpty && !showError && (
+          <div className="order-1 h-[420px] lg:order-2 lg:sticky lg:top-24 lg:h-[calc(100vh-8rem)]">
+            <SearchMap properties={results} />
+          </div>
+        )}
       </div>
 
       <details className="mt-10 rounded-lg border border-line bg-white px-4 py-3 text-xs text-muted">

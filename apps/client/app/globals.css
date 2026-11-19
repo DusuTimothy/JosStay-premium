@@ -92,3 +92,25 @@ body {
       );
   }
 }
+
+/* Leaflet map */
+.leaflet-container {
+  font-family: inherit;
+}
+.leaflet-price-marker > div {
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+.leaflet-price-marker:hover > div {
+  transform: translateY(-3px) scale(1.06);
+  background: #2f1843 !important;
+}
+.leaflet-popup-content-wrapper {
+  border-radius: 14px;
+  box-shadow: 0 18px 40px -16px rgba(38, 36, 46, 0.3);
+}
+.leaflet-popup-content {
+  margin: 12px 14px;
+}
+.leaflet-popup-content a {
+  color: inherit;
+}

@@ -23,7 +23,7 @@ JosStay-premium/
 | Route | Screen |
 |-------|--------|
 | `/` | Home |
-| `/search` | Search results + filters |
+| `/search` | Search results + filters + map toggle |
 | `/property/[slug]` | Property detail |
 | `/checkout` | Guest details + payment |
 | `/confirmation/[reference]` | Booking confirmation |
