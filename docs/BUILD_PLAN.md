@@ -2,7 +2,7 @@
 
 **Project:** JosStay Premium — a mobile-first accommodation booking platform for Jos, Plateau State.
 **Build window:** 18 November 2026 → 21 November 2026 (4 build days).
-**Stack:** HTML, Tailwind CSS, JavaScript, React, Next.js, Node.js, Express, PostgreSQL, Redis, Zod, Multer, Helmet, Sequelize, CORS, bcrypt, dotenv, Supabase, Render, Vercel, Brevo, Paystack, data analysis, AI/LLM integration, WhatsApp integration, Google sign-up, RBAC.
+**Stack:** HTML, Tailwind CSS, JavaScript, React, Next.js, Node.js, Express, PostgreSQL, Supabase, supabase-js, RLS, Redis, Zod, Multer, Helmet, CORS, bcrypt, JWT, dotenv, Render, Vercel, Brevo, Paystack, data analysis, AI/LLM integration, WhatsApp integration, Google sign-up, RBAC.
 
 ---
 

@@ -20,8 +20,9 @@ Technology stack for building **JosStay Premium**.
 
 ## Database, ORM & Storage
 - **PostgreSQL** – Primary relational database
-- **Supabase** – Backend platform/services (e.g. database, auth, storage as needed)
-- **Sequelize ORM** – Object-relational mapping for database access and modeling
+- **Supabase** – Managed Postgres, migrations, backups and row level security
+- **supabase-js** – Server-side data access with the service-role key
+- **Row Level Security (RLS)** – Default-deny policies; public catalogue only
 
 ## Caching
 - **Redis** – In-memory data store for caching and performance optimization
@@ -35,6 +36,8 @@ Technology stack for building **JosStay Premium**.
 - **Helmet** – HTTP security headers middleware
 - **CORS** – Cross-origin resource sharing configuration
 - **bcrypt** – Password hashing
+- **JWT** – Signed HS256 access tokens
+- **express-rate-limit** – API and authentication throttling
 - **Google Sign-Up** – OAuth-based authentication with Google
 - **RBAC (Role-Based Access Control)** – Authorization based on user roles and permissions
 

@@ -56,7 +56,7 @@ npm start
 - Calendar selection updates nightly totals, fees, pickup and bundle discounts live.
 - Search filters visibly update results; list/map toggle, empty, loading and error states are included.
 - Mock card payment succeeds for any 16-digit number; a card ending in `0000` triggers the failure/retry state.
-- Bookings and drafts persist in `localStorage`; the UI is fully clickable without a database.
+- Bookings and drafts persist in `localStorage` for the clickable demo; the API persists to Supabase Postgres when configured.
 - 10 sample Jos properties from ₦10,000 to ₦150,000 per night, all marked as sample data.
 
 ## Monorepo layout
@@ -64,48 +64,61 @@ npm start
 ```
 apps/
   client/        Next.js 14 App Router + Tailwind CSS
-  server/        Express REST API (helmet, cors, zod, bcryptjs)
+  server/        Express REST API (helmet, cors, zod, bcryptjs, Supabase)
 packages/
   shared/        Sample properties, reviews, quote helpers, formatting
+supabase/
+  migrations/    Postgres schema, RLS policies and least-privilege grants
 docs/
   BUILD_PLAN.md     Daily plan (18–21 Nov 2026) + social posts
   DESIGN_SYSTEM.md  Colours, type, components, interaction rules
   ARCHITECTURE.md   Routes, API, RBAC, deployment
+  SUPABASE_SETUP.md Project setup, migrations, seeding and security model
   SAMPLE_DATA.md    The 10 listings and data conventions
 ```
 
 ## API
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Service status |
-| GET | `/api/meta` | Amenities, areas, currency info |
-| GET | `/api/properties` | Filter and sort properties |
-| GET | `/api/properties/:slug` | Single property |
-| GET | `/api/properties/:slug/availability` | 60-day availability |
-| POST | `/api/bookings` | Create a booking (Zod validated) |
-| GET | `/api/bookings` | List bookings (`?email=`) |
-| PATCH | `/api/bookings/:reference/cancel` | Cancel a booking |
-| POST | `/api/auth/register` | Register with bcrypt-hashed password |
-| POST | `/api/auth/login` | Demo login token |
-| GET | `/api/host/payouts` | RBAC demo (`x-role: host`) |
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/health` | Public | Service status and active backend |
+| GET | `/api/meta` | Public | Amenities, areas, currency info |
+| GET | `/api/properties` | Public | Filter and sort published properties |
+| GET | `/api/properties/:slug` | Public | Single property |
+| GET | `/api/properties/:slug/availability` | Public | 60-day availability |
+| POST | `/api/auth/register` | Public | Create a guest account (bcrypt, role forced to `guest`) |
+| POST | `/api/auth/login` | Public | Signed JWT access token |
+| GET | `/api/auth/me` | Bearer | Current account |
+| POST | `/api/bookings` | Bearer | Create a booking (Zod validated, server-priced) |
+| GET | `/api/bookings` | Bearer | Own bookings; hosts see their properties, admins see all |
+| PATCH | `/api/bookings/:reference/cancel` | Bearer | Cancel an owned/hosted booking |
+| GET | `/api/host/payouts` | Bearer `host`/`admin` | Payouts for the signed-in host |
 
-The API is an in-memory demo. Production persistence is planned with **Sequelize + PostgreSQL (Supabase)** and **Redis** caching, with the integrations listed in `docs/ARCHITECTURE.md`.
+Protected routes use `Authorization: Bearer <token>`. Roles come from the signed
+JWT; the old `x-role` header is no longer accepted. Registration always creates a
+`guest`; create trusted hosts/admins with the server script.
+
+The server runs on an in-memory demo store by default. Set `DATA_BACKEND=supabase`
+with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to persist to Supabase
+Postgres, where RLS, least-privilege grants and a room over-booking constraint are
+enforced. Production fails closed if Supabase/JWT secrets are missing. See
+[Supabase setup & security](docs/SUPABASE_SETUP.md).
 
 ## Documentation
 
 - [Build plan & social posts](docs/BUILD_PLAN.md)
 - [Design system](docs/DESIGN_SYSTEM.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Supabase setup & security](docs/SUPABASE_SETUP.md)
 - [Sample data](docs/SAMPLE_DATA.md)
 
 ## Notes
 
-> All listings, reviews, hosts, references, payouts and fares are **sample data**. No real payment is taken. Replace `packages/shared/data.js` and connect the API to PostgreSQL before launch.
+> All listings, reviews, hosts, references, payouts and fares are **sample data**. No real payment is taken. Replace `packages/shared/data.js` with real inventory and follow [Supabase setup](docs/SUPABASE_SETUP.md) before launch.
 
 ## Deployment
 
 - **Client:** Vercel — set `NEXT_PUBLIC_API_URL`.
-- **Server:** Render — set `PORT`, `CLIENT_ORIGIN`, `DATABASE_URL`, `REDIS_URL`, `PAYSTACK_SECRET_KEY`, `BREVO_API_KEY`, `JWT_SECRET`.
-- **Database:** Supabase Postgres.
+- **Server:** Render — set `NODE_ENV=production`, `DATA_BACKEND=supabase`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CLIENT_ORIGIN`, `TRUST_PROXY=1`, `JWT_SECRET`, and the integration keys.
+- **Database:** Supabase Postgres with RLS, backups and SSL enforcement.
 - **Cache:** Redis (Render/Upstash).

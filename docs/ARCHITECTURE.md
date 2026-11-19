@@ -57,26 +57,34 @@ JosStay-premium/
 `josstay-host-name`, `josstay-account`. Provider hooks and keys are preserved across the refactor.
 
 **Data**
-- Demo reads from `packages/shared/data.js` (sample data).
-- In production these calls move behind the Express API and PostgreSQL.
+- The client demo reads from `packages/shared/data.js` and `localStorage`.
+- The Express API uses an in-memory store locally and Supabase Postgres when
+  `DATA_BACKEND=supabase`.
 
 ## Server (Express)
 
 ```
-GET  /health
-GET  /api/properties              list + filter (destination, type, minPrice, maxPrice, rating, amenities, freeCancellation, sort)
-GET  /api/properties/:slug        single property
-GET  /api/properties/:slug/availability
-POST /api/bookings                create booking (Zod validation)
-GET  /api/bookings                list bookings
+GET   /health
+GET   /api/meta
+GET   /api/properties              list + filter (destination, type, minPrice, maxPrice, rating, amenities, freeCancellation, maxDistance, sort, limit, offset)
+GET   /api/properties/:slug        single property
+GET   /api/properties/:slug/availability
+POST  /api/auth/register           create guest, bcrypt hash
+POST  /api/auth/login              signed HS256 JWT
+GET   /api/auth/me                 Bearer token
+POST  /api/bookings                create booking (Bearer + Zod)
+GET   /api/bookings                own/host/admin scope (Bearer)
 PATCH /api/bookings/:reference/cancel
-POST /api/auth/register           bcrypt password hash, RBAC role
-POST /api/auth/login              mock JWT-ready response
+GET   /api/host/payouts            Bearer host/admin
 ```
 
-- **Security:** Helmet, CORS allow-list, Zod request validation, bcrypt password hashing.
-- **Future persistence:** Sequelize models (`User`, `Property`, `Room`, `Booking`, `Payout`) on PostgreSQL via Supabase; Redis for search caching and rate limiting.
-- **Integrations (planned):** Paystack (payments), Brevo (email), WhatsApp Cloud API, Google OAuth, LLM concierge service.
+- **Persistence:** Supabase Postgres. Migrations live in `supabase/migrations/`;
+  the API uses the service-role key server-side only.
+- **Security:** RLS with default deny, least-privilege grants, signed JWTs,
+  object-level booking authorization, bcrypt cost 12, Helmet, strict CORS,
+  rate limits, 100 kB JSON limit, Zod validation, request IDs, and a room
+  over-booking exclusion constraint. See `docs/SUPABASE_SETUP.md`.
+- **Integrations (planned):** Paystack (payments), Brevo (email), WhatsApp Cloud API, Google OAuth, LLM concierge service, Redis caching.
 
 ## Roles (RBAC)
 | Role | Access |
@@ -87,7 +95,11 @@ POST /api/auth/login              mock JWT-ready response
 
 ## Environments
 - `apps/client/.env.local` — `NEXT_PUBLIC_API_URL`
-- `apps/server/.env` — `PORT`, `CLIENT_ORIGIN`, `DATABASE_URL`, `REDIS_URL`, `PAYSTACK_SECRET_KEY`, `BREVO_API_KEY`, `JWT_SECRET`
+- `apps/server/.env` — `NODE_ENV`, `PORT`, `CLIENT_ORIGIN`, `DATA_BACKEND`,
+  `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `JWT_SECRET`,
+  `REDIS_URL`, `PAYSTACK_SECRET_KEY`, `BREVO_API_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` is server-only and must never use a `NEXT_PUBLIC_*`
+  prefix.
 
 ## Deployment
 - **Client:** Vercel (Next.js).
