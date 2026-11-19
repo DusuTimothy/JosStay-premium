@@ -9,7 +9,7 @@ import { Icon } from "@/components/ui/Icon";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { useCurrency, useToast } from "@/components/providers";
 
-const MIN_PASSWORD_LENGTH = 8;
+const SIGNUP_MIN_PASSWORD_LENGTH = 12;
 
 const benefits = [
   { icon: "wallet", title: "Earn from every night", text: "Set your own prices and get paid securely through Paystack after each stay." },
@@ -37,7 +37,7 @@ export function HostView() {
     if (!form.name.trim()) next.name = "Enter your full name";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email)) next.email = "Enter a valid email address";
     if (form.phone.replace(/\D/g, "").length < 10) next.phone = "Enter a valid phone number";
-    if (password.length < MIN_PASSWORD_LENGTH) next.password = `Use at least ${MIN_PASSWORD_LENGTH} characters`;
+    if (password.length < SIGNUP_MIN_PASSWORD_LENGTH) next.password = `Use at least ${SIGNUP_MIN_PASSWORD_LENGTH} characters`;
     if (confirmPassword !== password) next.confirmPassword = "Passwords do not match";
     setErrors(next);
     if (Object.keys(next).length) return;
@@ -120,9 +120,11 @@ export function HostView() {
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); setErrors((er) => ({ ...er, password: undefined })); }}
                 error={errors.password}
-                hint={`At least ${MIN_PASSWORD_LENGTH} characters.`}
+                hint={`At least ${SIGNUP_MIN_PASSWORD_LENGTH} characters.`}
                 placeholder="Create a password"
                 autoComplete="new-password"
+                minLength={SIGNUP_MIN_PASSWORD_LENGTH}
+                maxLength={72}
               />
 
               <PasswordField
@@ -132,6 +134,7 @@ export function HostView() {
                 error={errors.confirmPassword}
                 placeholder="Re-enter your password"
                 autoComplete="new-password"
+                maxLength={72}
               />
 
               <div className="grid grid-cols-2 gap-3">

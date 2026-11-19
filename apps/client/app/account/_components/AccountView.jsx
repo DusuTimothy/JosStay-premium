@@ -8,7 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { useBooking, useToast } from "@/components/providers";
 
-const MIN_PASSWORD_LENGTH = 8;
+const SIGNUP_MIN_PASSWORD_LENGTH = 12;
 
 const shortcuts = [
   { href: "/bookings", icon: "calendar", title: "My bookings", text: "View, cancel or rebook a stay in Jos." },
@@ -61,8 +61,12 @@ export function AccountView() {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
         next.email = "Enter a valid email address";
       }
-      if (password.trim().length < MIN_PASSWORD_LENGTH) {
-        next.password = `Use at least ${MIN_PASSWORD_LENGTH} characters`;
+      if (mode === "signup") {
+        if (password.length < SIGNUP_MIN_PASSWORD_LENGTH) {
+          next.password = `Use at least ${SIGNUP_MIN_PASSWORD_LENGTH} characters`;
+        }
+      } else if (password.length < 1) {
+        next.password = "Enter your password";
       }
       setErrors(next);
       if (Object.keys(next).length) return;
@@ -202,9 +206,11 @@ export function AccountView() {
                   value={password}
                   onChange={(e) => { setPassword(e.target.value); setErrors((er) => ({ ...er, password: undefined })); }}
                   error={errors.password}
-                  hint={isSignup ? `At least ${MIN_PASSWORD_LENGTH} characters.` : undefined}
-                  placeholder={isSignup ? "Create a password" : "Any password works in the demo"}
+                  hint={isSignup ? `At least ${SIGNUP_MIN_PASSWORD_LENGTH} characters.` : undefined}
+                  placeholder={isSignup ? "Create a password" : "Enter your password"}
                   autoComplete={isSignup ? "new-password" : "current-password"}
+                  minLength={isSignup ? SIGNUP_MIN_PASSWORD_LENGTH : undefined}
+                  maxLength={72}
                 />
 
                 <Button type="submit" full size="lg">{isSignup ? "Create account" : "Sign in"}</Button>
