@@ -1,16 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  amenityLabel,
-  formatDate,
-  properties,
-  quoteStay,
-  typeLabel,
-} from "@josstay/shared";
+import { amenityLabel, formatDate, quoteStay, typeLabel } from "@josstay/shared";
 import { SearchBar } from "@/components/shared/SearchBar";
 import { SearchSelect } from "@/components/shared/SearchSelect";
 import { PropertyCard } from "@/components/shared/PropertyCard";
@@ -18,6 +12,7 @@ import { FilterPanel, DEFAULT_FILTERS } from "@/components/shared/FilterPanel";
 import { EmptyState, ErrorState, LoadingResults } from "@/components/shared/states";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { api } from "@/lib/api";
 
 const SearchMap = dynamic(() => import("./SearchMap").then((mod) => mod.SearchMap), {
   ssr: false,
@@ -45,6 +40,11 @@ const TYPE_TABS = [
   { id: "apartment", label: "Apartment" },
 ];
 
+const toPositiveInt = (value, fallback) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+};
+
 export function SearchView() {
   const router = useRouter();
   const params = useSearchParams();
@@ -53,7 +53,7 @@ export function SearchView() {
     destination: params.get("destination") || "",
     checkIn: params.get("checkIn") || "",
     checkOut: params.get("checkOut") || "",
-    guests: Number(params.get("guests") || 2),
+    guests: toPositiveInt(params.get("guests"), 2),
     type: params.get("type") || "",
   }));
 
@@ -62,22 +62,14 @@ export function SearchView() {
     types: params.get("type") ? [params.get("type")] : [],
   }));
   const [sort, setSort] = useState("recommended");
+  const [results, setResults] = useState([]);
+  const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [demoState, setDemoState] = useState("default");
+  const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
   const [view, setView] = useState("list");
   const [filterOpen, setFilterOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-
-  const filterKey = useMemo(
-    () => JSON.stringify([filters, sort, query]),
-    [filters, sort, query]
-  );
-
-  useEffect(() => {
-    setLoading(true);
-    const timer = window.setTimeout(() => setLoading(false), 450);
-    return () => window.clearTimeout(timer);
-  }, [filterKey]);
 
   useEffect(() => {
     document.body.style.overflow = filterOpen ? "hidden" : "";
@@ -86,66 +78,78 @@ export function SearchView() {
     };
   }, [filterOpen]);
 
-  const results = useMemo(() => {
-    const term = query.destination.trim().toLowerCase();
+  const requestParams = useMemo(() => {
+    const selectedType = query.type || filters.types[0] || "";
+    const search = new URLSearchParams();
+    const destination = query.destination.trim();
 
-    const filtered = properties.filter((property) => {
-      const matchesDestination =
-        !term ||
-        property.area.toLowerCase().includes(term) ||
-        property.name.toLowerCase().includes(term) ||
-        property.address.toLowerCase().includes(term);
-      const matchesType =
-        filters.types.length === 0 || filters.types.includes(property.type);
-      const matchesPrice =
-        property.price >= filters.minPrice && property.price <= filters.maxPrice;
-      const matchesRating = property.rating >= filters.rating;
-      const matchesAmenities = filters.amenities.every((a) =>
-        property.amenities.includes(a)
-      );
-      const matchesDistance =
-        !filters.maxDistance || property.distanceKm <= filters.maxDistance;
-      const matchesCancellation =
-        !filters.freeCancellation || property.freeCancellation;
-
-      return (
-        matchesDestination &&
-        matchesType &&
-        matchesPrice &&
-        matchesRating &&
-        matchesAmenities &&
-        matchesDistance &&
-        matchesCancellation
-      );
-    });
-
-    const sorted = [...filtered];
-    if (sort === "price-asc") sorted.sort((a, b) => a.price - b.price);
-    if (sort === "price-desc") sorted.sort((a, b) => b.price - a.price);
-    if (sort === "rating") sorted.sort((a, b) => b.rating - a.rating);
-    if (sort === "distance") sorted.sort((a, b) => a.distanceKm - b.distanceKm);
-    if (sort === "recommended") {
-      sorted.sort(
-        (a, b) =>
-          Number(b.verified) - Number(a.verified) ||
-          b.rating - a.rating ||
-          b.reviewCount - a.reviewCount
-      );
+    if (destination) search.set("destination", destination);
+    if (selectedType) search.set("type", selectedType);
+    if (Number(filters.minPrice) > 0) search.set("minPrice", String(filters.minPrice));
+    if (Number(filters.maxPrice) > 0) search.set("maxPrice", String(filters.maxPrice));
+    if (Number(filters.rating) > 0) search.set("rating", String(filters.rating));
+    if (Array.isArray(filters.amenities) && filters.amenities.length) {
+      search.set("amenities", filters.amenities.join(","));
     }
-    return sorted;
-  }, [filters, query.destination, sort]);
+    if (filters.freeCancellation) search.set("freeCancellation", "true");
+    if (Number(filters.maxDistance) > 0) search.set("maxDistance", String(filters.maxDistance));
+    if (sort) search.set("sort", sort);
 
-  const quoteFor = (property) => {
-    if (!query.checkIn || !query.checkOut) return null;
-    return quoteStay(property, query.checkIn, query.checkOut);
-  };
+    return search;
+  }, [filters, query.destination, query.type, sort]);
+
+  const requestKey = requestParams.toString();
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    setLoading(true);
+    setError("");
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const path = `/api/properties${requestKey ? `?${requestKey}` : ""}`;
+        const res = await api.get(path, { signal: controller.signal, cache: "no-store" });
+        if (!active) return;
+        const data = Array.isArray(res?.data) ? res.data : [];
+        setResults(data);
+        setCount(Number.isFinite(res?.count) ? res.count : data.length);
+      } catch (err) {
+        if (!active || err?.code === "REQUEST_ABORTED" || err?.name === "AbortError") return;
+        setResults([]);
+        setCount(0);
+        setError(err?.message || "Failed to load properties");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [requestKey, reloadKey]);
+
+  const quoteFor = useCallback(
+    (property) => {
+      if (!query.checkIn || !query.checkOut) return null;
+      return quoteStay(property, query.checkIn, query.checkOut);
+    },
+    [query.checkIn, query.checkOut],
+  );
 
   const updateQuery = (next) => {
     const merged = { ...query, ...next };
+    if ("type" in next) {
+      merged.type = next.type || "";
+    }
+    merged.guests = toPositiveInt(merged.guests, 2);
     setQuery(merged);
     if ("type" in next) {
       setFilters((f) => ({ ...f, types: next.type ? [next.type] : [] }));
     }
+
     const search = new URLSearchParams();
     if (merged.destination) search.set("destination", merged.destination);
     if (merged.checkIn) search.set("checkIn", merged.checkIn);
@@ -158,19 +162,20 @@ export function SearchView() {
   const resetAll = () => {
     setFilters({ ...DEFAULT_FILTERS });
     setSort("recommended");
-    setDemoState("default");
   };
 
   const activeChips = [];
-  filters.types.forEach((type) =>
+  (filters.types[0] ? [filters.types[0]] : []).forEach((type) =>
     activeChips.push({
       key: `type-${type}`,
       label: typeLabel(type),
-      clear: () =>
-        setFilters((f) => ({ ...f, types: f.types.filter((t) => t !== type) })),
-    })
+      clear: () => {
+        setFilters((f) => ({ ...f, types: [] }));
+        updateQuery({ type: "" });
+      },
+    }),
   );
-  filters.amenities.forEach((amenity) =>
+  (filters.amenities || []).forEach((amenity) =>
     activeChips.push({
       key: `amenity-${amenity}`,
       label: amenityLabel(amenity),
@@ -179,7 +184,7 @@ export function SearchView() {
           ...f,
           amenities: f.amenities.filter((a) => a !== amenity),
         })),
-    })
+    }),
   );
   if (filters.rating > 0) {
     activeChips.push({
@@ -210,17 +215,15 @@ export function SearchView() {
     });
   }
 
-  const showLoading = loading || demoState === "loading";
-  const showError = demoState === "error";
-  const showEmpty = demoState === "empty" || (!showLoading && results.length === 0);
+  const showEmpty = !loading && !error && results.length === 0;
+  const resultCount = loading ? 0 : (count || results.length);
 
   const resultsMeta = () => {
     const bits = [
-      `${properties.length} sample properties`,
       query.checkIn && query.checkOut
         ? `${formatDate(query.checkIn, { year: undefined })} – ${formatDate(query.checkOut, { year: undefined })}`
         : "Any dates",
-      "Prices include fees",
+      `${query.guests} guest${query.guests === 1 ? "" : "s"}`,
     ];
     return bits.join(" · ");
   };
@@ -295,7 +298,7 @@ export function SearchView() {
         <div className="no-scrollbar -mx-1 flex min-w-0 flex-1 gap-2 overflow-x-auto px-1 pb-1">
           {TYPE_TABS.map((tab) => {
             const active =
-              tab.id === "" ? filters.types.length === 0 : filters.types.includes(tab.id);
+              tab.id === "" ? !filters.types[0] && !query.type : (filters.types[0] === tab.id || query.type === tab.id);
             return (
               <button
                 key={tab.id || "all"}
@@ -376,12 +379,14 @@ export function SearchView() {
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5">
         <p className="text-[13px] text-muted">
-          {showLoading ? (
+          {loading ? (
             "Searching stays…"
+          ) : error ? (
+            "Unable to load stays"
           ) : (
             <>
-              <strong className="font-semibold text-ink">{results.length}</strong> stay
-              {results.length === 1 ? "" : "s"} match your filters
+              <strong className="font-semibold text-ink">{resultCount}</strong> stay
+              {resultCount === 1 ? "" : "s"} match your filters
             </>
           )}
         </p>
@@ -399,21 +404,21 @@ export function SearchView() {
 
       <div
         className={
-          view === "map" && !showLoading && !showEmpty
+          view === "map" && !loading && !showEmpty && !error
             ? "mt-2 grid gap-6 lg:grid-cols-[1fr_420px] xl:grid-cols-[1fr_480px]"
             : "mt-2"
         }
       >
         <div className={`divide-y divide-line ${view === "map" ? "order-2 lg:order-1" : ""}`}>
-          {showError ? (
+          {error ? (
             <div className="pt-6">
               <ErrorState
                 title="We couldn't load these stays"
-                description="This is the demo error state. Your filters are safe — try again to reload the results."
-                onRetry={() => setDemoState("default")}
+                description={error}
+                onRetry={() => setReloadKey((k) => k + 1)}
               />
             </div>
-          ) : showLoading ? (
+          ) : loading ? (
             <div className="pt-6">
               <LoadingResults count={4} />
             </div>
@@ -428,7 +433,7 @@ export function SearchView() {
           ) : (
             results.map((property) => (
               <PropertyCard
-                key={property.id}
+                key={property.id || property.slug}
                 property={property}
                 quote={quoteFor(property)}
                 layout="row"
@@ -437,36 +442,12 @@ export function SearchView() {
           )}
         </div>
 
-        {view === "map" && !showLoading && !showEmpty && !showError && (
+        {view === "map" && !loading && !showEmpty && !error && (
           <div className="order-1 h-[420px] lg:order-2 lg:sticky lg:top-24 lg:h-[calc(100vh-8rem)]">
             <SearchMap properties={results} />
           </div>
         )}
       </div>
-
-      <details className="mt-10 rounded-lg border border-line bg-white px-4 py-3 text-xs text-muted">
-        <summary className="cursor-pointer font-semibold text-ink">
-          Prototype states (for review)
-        </summary>
-        <p className="mt-2">Preview the required loading, empty, and error states.</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {[
-            { id: "default", label: "Results" },
-            { id: "loading", label: "Loading" },
-            { id: "empty", label: "Empty" },
-            { id: "error", label: "Error" },
-          ].map((state) => (
-            <button
-              key={state.id}
-              type="button"
-              onClick={() => setDemoState(state.id)}
-              className={`chip !py-1.5 !text-[12px] ${demoState === state.id ? "chip-active" : ""}`}
-            >
-              {state.label}
-            </button>
-          ))}
-        </div>
-      </details>
 
       {filterOpen && (
         <div className="fixed inset-0 z-[75] lg:hidden">
@@ -498,7 +479,7 @@ export function SearchView() {
                 Reset
               </Button>
               <Button onClick={() => setFilterOpen(false)}>
-                Show {results.length} stays
+                Show {resultCount} stays
               </Button>
             </div>
           </div>
