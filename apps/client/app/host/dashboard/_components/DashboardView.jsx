@@ -14,6 +14,7 @@ import { Badge, VerifiedBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useCurrency, useToast } from "@/components/providers";
+import { SUPPORT_WHATSAPP_URL } from "@/lib/contact";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: "dashboard" },
@@ -449,7 +450,7 @@ function Dashboard() {
             <div className="rounded-xl border border-line bg-white p-4">
               <h3 className="text-sm font-bold text-ink">Need a hand?</h3>
               <p className="mt-1 text-[11px] leading-relaxed text-muted">Questions about commission, refunds or payouts? Our host team replies on WhatsApp within minutes.</p>
-              <a href="https://wa.me/2348000000000" target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 underline underline-offset-4"><Icon name="whatsapp" className="h-3.5 w-3.5" /> Chat with host support</a>
+              <a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 underline underline-offset-4"><Icon name="whatsapp" className="h-3.5 w-3.5" /> Chat with JosStay support</a>
             </div>
           </div>
         </div>
