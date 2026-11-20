@@ -102,16 +102,12 @@ export function HostView() {
       setPassword("");
       setConfirmPassword("");
     } catch (error) {
-      // Local/demo fallback: if API is unavailable, keep previous demo behavior.
-      if (!error?.status || error.status >= 500 || error.code === "NETWORK_ERROR" || error.code === "REQUEST_ABORTED") {
-        try { window.localStorage.setItem("josstay-host-name", form.name); } catch {}
-        toast("Host setup saved locally (demo fallback).", "success");
-        router.push("/host/dashboard");
-      } else {
-        const message = error?.message || "Could not create host account";
-        setErrors((current) => ({ ...current, form: message }));
-        toast(message, "error");
-      }
+      const message =
+        error?.code === "NETWORK_ERROR" || error?.code === "REQUEST_ABORTED" || !error?.status
+          ? "Could not reach the server. Check your connection and try again."
+          : error?.message || "Could not create host account";
+      setErrors((current) => ({ ...current, form: message }));
+      toast(message, "error");
     } finally {
       setLoading(false);
     }

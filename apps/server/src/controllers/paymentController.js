@@ -7,6 +7,7 @@ import {
   verifyPaystackTransaction,
   verifyPaystackWebhookSignature,
 } from "../lib/paystack.js";
+import { sendBookingConfirmationEmail } from "../lib/notifications.js";
 import { findBookingByReference, markBookingPaymentByReference } from "../store/bookingStore.js";
 
 const sampleData = DATA_BACKEND === "demo";
@@ -119,10 +120,21 @@ const confirmSuccessfulPayment = async ({
     throw new HttpError(404, "Booking not found for payment");
   }
 
-  // Amount safety: if we know expected total, verify it matches (Paystack amount is in kobo).
+  if (["cancelled", "completed", "no_show"].includes(booking.status)) {
+    throw new HttpError(409, "Booking is not payable in its current state");
+  }
+
   const expectedKobo = Math.round(Number(booking.total || 0) * 100);
   if (expectedKobo > 0 && Number.isFinite(amountKobo) && amountKobo !== expectedKobo) {
     throw new HttpError(409, "Payment amount does not match booking total");
+  }
+
+  // Idempotent success: if already paid for this booking, require same reference/provider context.
+  if (booking.paymentStatus === "paid") {
+    if (booking.paymentReference && paymentReference && booking.paymentReference !== paymentReference) {
+      throw new HttpError(409, "Booking is already paid with a different payment reference");
+    }
+    return booking;
   }
 
   await upsertPaymentRecord({
@@ -149,6 +161,11 @@ const confirmSuccessfulPayment = async ({
     paidAt: paidAt || new Date().toISOString(),
     bookingStatus: "upcoming",
   });
+
+  // Best-effort confirmation notification for first successful payment.
+  try {
+    await sendBookingConfirmationEmail(updated || booking);
+  } catch {}
 
   return updated;
 };
@@ -187,24 +204,27 @@ export const verifyPaystackPayment = asyncHandler(async (req, res) => {
     return res.json({ data: { booking: updated, payment: { reference, status: "paid", provider: "paystack" } }, sampleData });
   }
 
-  // Non-success: record state but do not confirm booking.
-  await upsertPaymentRecord({
-    provider: "paystack",
-    bookingId: booking.id || null,
-    bookingReference,
-    reference,
-    amount: booking.total || Math.round(Number(transaction?.amount || 0) / 100),
-    currency: booking.currency || "NGN",
-    status: status === "failed" ? "failed" : status === "abandoned" ? "abandoned" : "initialized",
-    channel: transaction?.channel || null,
-    customerEmail: booking.guest?.email || null,
-    rawVerify: transaction || {},
-  });
+  // Non-success: record state but do not confirm booking or regress a paid booking.
+  if (booking.paymentStatus !== "paid") {
+    await upsertPaymentRecord({
+      provider: "paystack",
+      bookingId: booking.id || null,
+      bookingReference,
+      reference,
+      amount: booking.total || Math.round(Number(transaction?.amount || 0) / 100),
+      currency: booking.currency || "NGN",
+      status: status === "failed" ? "failed" : status === "abandoned" ? "abandoned" : "initialized",
+      channel: transaction?.channel || null,
+      customerEmail: booking.guest?.email || null,
+      rawVerify: transaction || {},
+    }).catch(() => {});
+  }
 
+  const freshBooking = await findBookingByReference(bookingReference, { auth: req.auth }) || booking;
   return res.json({
     data: {
-      booking,
-      payment: { reference, status: status || "unknown", provider: "paystack" },
+      booking: freshBooking,
+      payment: { reference, status: freshBooking.paymentStatus === "paid" ? "paid" : (status || "unknown"), provider: "paystack" },
     },
     sampleData,
   });
@@ -254,16 +274,24 @@ export const handlePaystackWebhook = asyncHandler(async (req, res) => {
       }
     }
   } else if (reference && bookingReference) {
-    await upsertPaymentRecord({
-      provider: "paystack",
-      bookingReference,
-      reference,
-      amount: Math.round(Number(data.amount || 0) / 100),
-      currency: data.currency || "NGN",
-      status: normalizePaystackStatus(data.status) === "failed" ? "failed" : "initialized",
-      channel: data.channel || null,
-      lastEvent: event,
-    }).catch(() => {});
+    try {
+      const booking = await findBookingByReference(bookingReference, { includeInternal: true });
+      if (booking?.paymentStatus !== "paid") {
+        await upsertPaymentRecord({
+          provider: "paystack",
+          bookingId: booking?.id || null,
+          bookingReference,
+          reference,
+          amount: booking?.total || Math.round(Number(data.amount || 0) / 100),
+          currency: booking?.currency || data.currency || "NGN",
+          status: normalizePaystackStatus(data.status) === "failed" ? "failed" : "initialized",
+          channel: data.channel || null,
+          lastEvent: event,
+        });
+      }
+    } catch {
+      // Ignore non-critical webhook side-effects.
+    }
   }
 
   return res.json({ received: true });

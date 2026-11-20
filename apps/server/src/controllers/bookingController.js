@@ -17,6 +17,7 @@ import {
   listBookingRecords,
   markBookingPaymentByReference,
 } from "../store/bookingStore.js";
+import { sendBookingConfirmationEmail } from "../lib/notifications.js";
 import { getPropertyContext } from "../store/propertyStore.js";
 import {
   BookingListQuerySchema,
@@ -189,8 +190,8 @@ export const createBooking = asyncHandler(async (req, res) => {
         currency: booking.currency || "NGN",
         email: booking.guest?.email || payload.guest.email,
       };
-    } else {
-      // No payment gateway configured (local/demo-safe fallback): create confirmed booking record.
+    } else if (sampleData) {
+      // Demo mode only: create a non-real-payment booking for local/demo continuity.
       booking = await createBookingRecord({
         userId: req.auth.userId,
         context,
@@ -209,6 +210,12 @@ export const createBooking = asyncHandler(async (req, res) => {
         amount: booking.total,
         currency: booking.currency || "NGN",
       };
+      // Best-effort confirmation notification for demo-paid bookings.
+      try {
+        await sendBookingConfirmationEmail(booking);
+      } catch {}
+    } else {
+      throw new HttpError(503, "Payment service is not configured");
     }
 
     const responseBody = { data: { booking, payment }, sampleData };
@@ -267,58 +274,94 @@ export const initializeBookingPayment = asyncHandler(async (req, res) => {
     throw new HttpError(503, "Payment service is not configured");
   }
 
-  const paymentReference = buildPaymentReference(booking.reference);
-  const callbackBase = resolveCallbackBaseUrl();
-  const callbackUrl = callbackBase
-    ? `${callbackBase}/confirmation/${encodeURIComponent(booking.reference)}`
-    : undefined;
+  const idempotencyKey = getIdempotencyKey(req);
+  const requestHash = hashIdempotencyPayload({ userId: req.auth.userId, reference, operation: "payment.initialize" });
+  const scope = `user:${req.auth.userId}:booking:payment-init:${reference}`;
+  let idem = { type: "skipped" };
+  if (isDatabaseEnabled) {
+    if (!idempotencyKey) {
+      throw new HttpError(400, "Idempotency-Key header is required for payment requests");
+    }
+    idem = await beginIdempotency({
+      scope,
+      key: idempotencyKey,
+      operation: "booking.payment.initialize",
+      requestHash,
+    });
+    if (idem.type === "replay") {
+      return res.status(idem.status || 200).json(idem.body);
+    }
+  }
 
-  const init = await initializePaystackTransaction({
-    email: booking.guest?.email,
-    amountKobo: toKobo(booking.total),
-    reference: paymentReference,
-    callbackUrl,
-    metadata: {
+  try {
+    const paymentReference = buildPaymentReference(booking.reference);
+    const callbackBase = resolveCallbackBaseUrl();
+    const callbackUrl = callbackBase
+      ? `${callbackBase}/confirmation/${encodeURIComponent(booking.reference)}`
+      : undefined;
+
+    const init = await initializePaystackTransaction({
+      email: booking.guest?.email,
+      amountKobo: toKobo(booking.total),
+      reference: paymentReference,
+      callbackUrl,
+      metadata: {
+        bookingReference: booking.reference,
+        userId: req.auth.userId,
+        propertySlug: booking.propertySlug,
+        retry: true,
+      },
+    });
+
+    await upsertPaymentForBooking({
+      booking,
+      paymentReference,
+      amount: booking.total,
+      currency: booking.currency || "NGN",
+      status: "initialized",
+      authorizationUrl: init.authorization_url || null,
+      accessCode: init.access_code || null,
+      customerEmail: booking.guest?.email || null,
+      rawInitialize: init,
+    });
+
+    const updatedBooking = await markBookingPaymentByReference({
       bookingReference: booking.reference,
-      userId: req.auth.userId,
-      propertySlug: booking.propertySlug,
-      retry: true,
-    },
-  });
+      paymentStatus: "initialized",
+      paymentReference,
+      paymentProvider: "paystack",
+      bookingStatus: booking.status === "confirmed" ? "confirmed" : "upcoming",
+    });
 
-  await upsertPaymentForBooking({
-    booking,
-    paymentReference,
-    amount: booking.total,
-    currency: booking.currency || "NGN",
-    status: "initialized",
-    authorizationUrl: init.authorization_url || null,
-    accessCode: init.access_code || null,
-    customerEmail: booking.guest?.email || null,
-    rawInitialize: init,
-  });
+    const payment = {
+      provider: "paystack",
+      reference: paymentReference,
+      status: "initialized",
+      authorizationUrl: init.authorization_url || null,
+      accessCode: init.access_code || null,
+      amount: updatedBooking?.total ?? booking.total,
+      amountKobo: toKobo(updatedBooking?.total ?? booking.total),
+      currency: updatedBooking?.currency || booking.currency || "NGN",
+      email: updatedBooking?.guest?.email || booking.guest?.email || null,
+    };
 
-  const updatedBooking = await markBookingPaymentByReference({
-    bookingReference: booking.reference,
-    paymentStatus: "initialized",
-    paymentReference,
-    paymentProvider: "paystack",
-    bookingStatus: booking.status === "confirmed" ? "confirmed" : "upcoming",
-  });
-
-  const payment = {
-    provider: "paystack",
-    reference: paymentReference,
-    status: "initialized",
-    authorizationUrl: init.authorization_url || null,
-    accessCode: init.access_code || null,
-    amount: updatedBooking?.total ?? booking.total,
-    amountKobo: toKobo(updatedBooking?.total ?? booking.total),
-    currency: updatedBooking?.currency || booking.currency || "NGN",
-    email: updatedBooking?.guest?.email || booking.guest?.email || null,
-  };
-
-  res.json({ data: { booking: updatedBooking, payment }, sampleData });
+    const responseBody = { data: { booking: updatedBooking, payment }, sampleData };
+    if (idem.type === "claimed") {
+      await completeIdempotency({ scope, key: idempotencyKey, status: 200, body: responseBody });
+    }
+    return res.json(responseBody);
+  } catch (error) {
+    if (idem.type === "claimed") {
+      const status = error instanceof HttpError ? error.status : 500;
+      await failIdempotency({
+        scope,
+        key: idempotencyKey,
+        status,
+        body: { error: error.message || "Could not initialize payment" },
+      }).catch(() => {});
+    }
+    throw error;
+  }
 });
 
 export const cancelBooking = asyncHandler(async (req, res) => {
