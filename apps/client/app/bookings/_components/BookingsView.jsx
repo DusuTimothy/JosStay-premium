@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useBooking, useCurrency, useToast } from "@/components/providers";
+import { supportWhatsAppUrl } from "@/lib/contact";
 import { EmptyState, SkeletonCard } from "@/components/shared/states";
 
 const TABS = [
@@ -140,8 +141,8 @@ export function BookingsView() {
                       {booking.status === "upcoming" && (
                         <>
                           <Button size="sm" variant="danger" onClick={() => setCancelRef(booking.reference)}>Cancel</Button>
-                          <Link href={`https://wa.me/2348000000000?text=${encodeURIComponent(`Hi JosStay, I need help with booking ${booking.reference} at ${property.name}.`)}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 px-2 py-2 text-[11.5px] font-semibold text-emerald-700">
-                            <Icon name="whatsapp" className="h-4 w-4" /> Contact host
+                          <Link href={supportWhatsAppUrl(`Hi JosStay, I need help with booking ${booking.reference} at ${property.name}.`)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 px-2 py-2 text-[11.5px] font-semibold text-emerald-700">
+                            <Icon name="whatsapp" className="h-4 w-4" /> Contact support
                           </Link>
                         </>
                       )}
