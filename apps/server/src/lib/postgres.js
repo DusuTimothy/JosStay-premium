@@ -80,6 +80,19 @@ export const getClient = async () => {
   return pool.connect();
 };
 
+const formatErrorReason = (error) => {
+  if (!(error instanceof Error)) return String(error);
+  const parts = [error.message, error.code].filter(Boolean);
+  if (Array.isArray(error.errors) && error.errors.length) {
+    const inner = error.errors
+      .map((entry) => (entry instanceof Error ? entry.message || entry.code : String(entry)))
+      .filter(Boolean)
+      .join("; ");
+    if (inner) parts.push(inner);
+  }
+  return parts.join(" | ") || error.name || "Unknown database error";
+};
+
 export const checkDatabaseConnection = async () => {
   if (!pool) {
     return { ok: false, reason: "PostgreSQL is not configured" };
@@ -88,7 +101,7 @@ export const checkDatabaseConnection = async () => {
     await pool.query("select 1 as ok");
     return { ok: true };
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    return { ok: false, reason: formatErrorReason(error) };
   }
 };
 

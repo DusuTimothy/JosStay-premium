@@ -100,9 +100,22 @@ const run = async () => {
   console.log("\nDatabase checks passed.");
 };
 
+const formatError = (error) => {
+  if (!(error instanceof Error)) return String(error);
+  const parts = [error.message, error.code].filter(Boolean);
+  if (Array.isArray(error.errors) && error.errors.length) {
+    const inner = error.errors
+      .map((entry) => (entry instanceof Error ? entry.message || entry.code : String(entry)))
+      .filter(Boolean)
+      .join("; ");
+    if (inner) parts.push(inner);
+  }
+  return parts.join(" | ") || error.name || "Unknown error";
+};
+
 run()
   .catch((error) => {
-    console.error("[verify-db] Failed:", error.message);
+    console.error("[verify-db] Failed:", formatError(error));
     process.exit(1);
   })
   .finally(async () => {
