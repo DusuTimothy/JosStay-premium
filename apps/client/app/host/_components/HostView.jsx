@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AREAS, PROPERTY_TYPES } from "@josstay/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { PasswordField } from "@/components/ui/PasswordField";
-import { useCurrency, useToast } from "@/components/providers";
+import { useAuth, useCurrency, useToast } from "@/components/providers";
+import { api } from "@/lib/api";
 
 const SIGNUP_MIN_PASSWORD_LENGTH = 8;
 
@@ -20,6 +21,7 @@ const benefits = [
 
 export function HostView() {
   const router = useRouter();
+  const auth = useAuth();
   const { toast } = useToast();
   const { format } = useCurrency();
   const [form, setForm] = useState({ name: "", email: "", phone: "", type: "apartment", area: "Rayfield" });
@@ -29,29 +31,90 @@ export function HostView() {
   const [loading, setLoading] = useState(false);
   const [rate, setRate] = useState(65000);
 
+  useEffect(() => {
+    if (auth.isAuthenticated && auth.user) {
+      setForm((current) => ({
+        ...current,
+        name: current.name || auth.user.name || "",
+        email: current.email || auth.user.email || "",
+      }));
+    }
+  }, [auth.isAuthenticated, auth.user]);
+
+  useEffect(() => {
+    if (!auth.isLoading && auth.isAuthenticated && auth.user?.role === "host") {
+      router.replace("/host/dashboard");
+    }
+  }, [auth.isLoading, auth.isAuthenticated, auth.user, router]);
+
   const estimate = Math.round(rate * 30 * 0.7 * 0.9);
 
   const submit = async (e) => {
     e.preventDefault();
+    if (loading) return;
+
     const next = {};
     if (!form.name.trim()) next.name = "Enter your full name";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email)) next.email = "Enter a valid email address";
     if (form.phone.replace(/\D/g, "").length < 10) next.phone = "Enter a valid phone number";
-    if (password.length < SIGNUP_MIN_PASSWORD_LENGTH) next.password = `Use at least ${SIGNUP_MIN_PASSWORD_LENGTH} characters`;
-    if (confirmPassword !== password) next.confirmPassword = "Passwords do not match";
+
+    const isAuthed = auth.isAuthenticated;
+    if (!isAuthed) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email)) next.email = "Enter a valid email address";
+      if (password.length < SIGNUP_MIN_PASSWORD_LENGTH) next.password = `Use at least ${SIGNUP_MIN_PASSWORD_LENGTH} characters`;
+      if (confirmPassword !== password) next.confirmPassword = "Passwords do not match";
+    }
+
     setErrors(next);
     if (Object.keys(next).length) return;
 
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 900));
+    setErrors({});
+
     try {
-      window.localStorage.setItem("josstay-host-name", form.name);
-    } catch {}
-    setPassword("");
-    setConfirmPassword("");
-    setLoading(false);
-    toast("Host account created (demo). Let's add your first listing.", "success");
-    router.push("/host/dashboard");
+      if (isAuthed) {
+        await api.post("/api/host/onboard", {
+          name: form.name.trim(),
+          phone: form.phone.trim(),
+          type: form.type,
+          area: form.area,
+        });
+        // Refresh auth/profile state so role updates are reflected.
+        await auth.refresh().catch(() => {});
+        toast("Host profile created. Welcome to your dashboard.", "success");
+        router.push("/host/dashboard");
+      } else {
+        const res = await api.post("/api/host/register", {
+          name: form.name.trim(),
+          email: form.email.trim().toLowerCase(),
+          password,
+          phone: form.phone.trim(),
+          type: form.type,
+          area: form.area,
+        });
+        if (res?.data) {
+          auth.setSession(res.data);
+        } else {
+          await auth.refresh().catch(() => {});
+        }
+        toast("Host account created. Welcome to your dashboard.", "success");
+        router.push("/host/dashboard");
+      }
+      setPassword("");
+      setConfirmPassword("");
+    } catch (error) {
+      // Local/demo fallback: if API is unavailable, keep previous demo behavior.
+      if (!error?.status || error.status >= 500 || error.code === "NETWORK_ERROR" || error.code === "REQUEST_ABORTED") {
+        try { window.localStorage.setItem("josstay-host-name", form.name); } catch {}
+        toast("Host setup saved locally (demo fallback).", "success");
+        router.push("/host/dashboard");
+      } else {
+        const message = error?.message || "Could not create host account";
+        setErrors((current) => ({ ...current, form: message }));
+        toast(message, "error");
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -93,49 +156,55 @@ export function HostView() {
           </div>
 
           <div className="rounded-xl bg-white p-5 shadow-float sm:p-6">
-            <h2 className="font-display text-[24px] font-bold tracking-tightest text-ink">Become a host</h2>
-            <p className="mt-1 text-xs text-muted">Create your account. Adding a listing takes about 5 minutes.</p>
+            <h2 className="font-display text-[24px] font-bold tracking-tightest text-ink">{auth.isAuthenticated ? "Set up your host profile" : "Become a host"}</h2>
+            <p className="mt-1 text-xs text-muted">{auth.isAuthenticated ? "Complete your host details to access your dashboard." : "Create your account. Adding a listing takes about 5 minutes."}</p>
+
+            {errors.form && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">{errors.form}</p>}
 
             <form onSubmit={submit} className="mt-5 space-y-3.5">
               <label className="block">
                 <span className="label">Full name</span>
-                <input value={form.name} onChange={(e) => { setForm((f) => ({ ...f, name: e.target.value })); setErrors((er) => ({ ...er, name: undefined })); }} className={`field ${errors.name ? "!border-red-400" : ""}`} placeholder="Grace Pam" />
+                <input value={form.name} onChange={(e) => { setForm((f) => ({ ...f, name: e.target.value })); setErrors((er) => ({ ...er, name: undefined, form: undefined })); }} className={`field ${errors.name ? "!border-red-400" : ""}`} placeholder="Grace Pam" />
                 {errors.name && <span className="mt-1 block text-[11px] text-red-600">{errors.name}</span>}
               </label>
 
               <label className="block">
                 <span className="label">Email address</span>
-                <input type="email" value={form.email} onChange={(e) => { setForm((f) => ({ ...f, email: e.target.value })); setErrors((er) => ({ ...er, email: undefined })); }} className={`field ${errors.email ? "!border-red-400" : ""}`} placeholder="grace@example.com" />
+                <input type="email" value={form.email} onChange={(e) => { if (!auth.isAuthenticated) { setForm((f) => ({ ...f, email: e.target.value })); setErrors((er) => ({ ...er, email: undefined, form: undefined })); } }} readOnly={auth.isAuthenticated} className={`field ${errors.email ? "!border-red-400" : ""} ${auth.isAuthenticated ? "bg-canvas text-muted" : ""}`} placeholder="grace@example.com" />
                 {errors.email && <span className="mt-1 block text-[11px] text-red-600">{errors.email}</span>}
               </label>
 
               <label className="block">
                 <span className="label">Phone number</span>
-                <input type="tel" value={form.phone} onChange={(e) => { setForm((f) => ({ ...f, phone: e.target.value })); setErrors((er) => ({ ...er, phone: undefined })); }} className={`field ${errors.phone ? "!border-red-400" : ""}`} placeholder="+234 800 000 0000" />
+                <input type="tel" value={form.phone} onChange={(e) => { setForm((f) => ({ ...f, phone: e.target.value })); setErrors((er) => ({ ...er, phone: undefined, form: undefined })); }} className={`field ${errors.phone ? "!border-red-400" : ""}`} placeholder="+234 800 000 0000" />
                 {errors.phone && <span className="mt-1 block text-[11px] text-red-600">{errors.phone}</span>}
               </label>
 
-              <PasswordField
-                label="Password"
-                value={password}
-                onChange={(e) => { setPassword(e.target.value); setErrors((er) => ({ ...er, password: undefined })); }}
-                error={errors.password}
-                hint={`At least ${SIGNUP_MIN_PASSWORD_LENGTH} characters.`}
-                placeholder="Create a password"
-                autoComplete="new-password"
-                minLength={SIGNUP_MIN_PASSWORD_LENGTH}
-                maxLength={72}
-              />
+              {!auth.isAuthenticated && (
+                <>
+                  <PasswordField
+                    label="Password"
+                    value={password}
+                    onChange={(e) => { setPassword(e.target.value); setErrors((er) => ({ ...er, password: undefined, form: undefined })); }}
+                    error={errors.password}
+                    hint={`At least ${SIGNUP_MIN_PASSWORD_LENGTH} characters.`}
+                    placeholder="Create a password"
+                    autoComplete="new-password"
+                    minLength={SIGNUP_MIN_PASSWORD_LENGTH}
+                    maxLength={72}
+                  />
 
-              <PasswordField
-                label="Confirm password"
-                value={confirmPassword}
-                onChange={(e) => { setConfirmPassword(e.target.value); setErrors((er) => ({ ...er, confirmPassword: undefined })); }}
-                error={errors.confirmPassword}
-                placeholder="Re-enter your password"
-                autoComplete="new-password"
-                maxLength={72}
-              />
+                  <PasswordField
+                    label="Confirm password"
+                    value={confirmPassword}
+                    onChange={(e) => { setConfirmPassword(e.target.value); setErrors((er) => ({ ...er, confirmPassword: undefined, form: undefined })); }}
+                    error={errors.confirmPassword}
+                    placeholder="Re-enter your password"
+                    autoComplete="new-password"
+                    maxLength={72}
+                  />
+                </>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
@@ -152,9 +221,9 @@ export function HostView() {
                 </label>
               </div>
 
-              <Button full size="lg" type="submit" loading={loading} iconRight="arrowRight">{loading ? "Creating account…" : "Create host account"}</Button>
+              <Button full size="lg" type="submit" loading={loading} iconRight="arrowRight">{loading ? (auth.isAuthenticated ? "Saving…" : "Creating account…") : (auth.isAuthenticated ? "Continue to host dashboard" : "Create host account")}</Button>
 
-              <p className="text-center text-[10px] leading-relaxed text-muted">By continuing you agree to host verification and the JosStay host terms. Demo only — no account is created.</p>
+              <p className="text-center text-[10px] leading-relaxed text-muted">By continuing you agree to host verification and the JosStay host terms.</p>
             </form>
 
             <div className="mt-4 border-t border-line pt-4 text-center">
