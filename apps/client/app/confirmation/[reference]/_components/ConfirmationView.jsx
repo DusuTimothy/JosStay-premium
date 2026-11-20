@@ -1,35 +1,104 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { formatDate, getProperty, typeLabel } from "@josstay/shared";
-import { Badge, VerifiedBadge } from "@/components/ui/Badge";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { formatDate, typeLabel } from "@josstay/shared";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import { useBooking, useCurrency, useToast } from "@/components/providers";
+import { useAuth, useBooking, useCurrency, useToast } from "@/components/providers";
+import { api } from "@/lib/api";
+import { openPaystackInline } from "@/lib/paystackInline";
 import { supportWhatsAppUrl } from "@/lib/contact";
-import { EmptyState, SkeletonCard } from "@/components/shared/states";
+import { EmptyState, ErrorState, LoadingResults } from "@/components/shared/states";
 
 export function ConfirmationView() {
   const params = useParams();
-  const { getBooking, hydrated } = useBooking();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const auth = useAuth();
+  const { fetchBooking, initializePayment } = useBooking();
   const { toast } = useToast();
   const { format } = useCurrency();
-  const [copied, setCopied] = useState(false);
 
-  const booking = getBooking(params.reference);
-  const property = booking ? getProperty(booking.propertySlug) : null;
+  const bookingReference = typeof params.reference === "string" ? params.reference : Array.isArray(params.reference) ? params.reference[0] : "";
+  const paymentRef = searchParams.get("reference") || searchParams.get("trxref") || "";
+
+  const [booking, setBooking] = useState(null);
+  const [property, setProperty] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [verifying, setVerifying] = useState(false);
+  const [retryingPayment, setRetryingPayment] = useState(false);
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, []);
 
+  useEffect(() => {
+    if (!bookingReference) return;
+    if (auth.isLoading) return;
+    if (!auth.isAuthenticated) {
+      setLoading(false);
+      setError("auth_required");
+      return;
+    }
+
+    let active = true;
+    setLoading(true);
+    setError("");
+
+    (async () => {
+      try {
+        if (paymentRef) {
+          setVerifying(true);
+          try {
+            await api.get(`/api/payments/paystack/verify?reference=${encodeURIComponent(paymentRef)}`, { cache: "no-store" });
+          } catch {
+            // Verification may be handled by webhook or retried; continue to load booking state.
+          } finally {
+            if (active) setVerifying(false);
+          }
+        }
+
+        const data = await fetchBooking(bookingReference, { cache: "no-store" });
+        if (!active) return;
+        setBooking(data);
+
+        const slug = data?.propertySlug;
+        if (slug) {
+          try {
+            const propRes = await api.get(`/api/properties/${encodeURIComponent(slug)}`, { cache: "no-store" });
+            if (active) setProperty(propRes?.data || null);
+          } catch {
+            if (active) setProperty(null);
+          }
+        }
+      } catch (err) {
+        if (!active) return;
+        if (err?.status === 404) setError("not_found");
+        else setError(err?.message || "Could not load booking");
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [bookingReference, paymentRef, auth.isLoading, auth.isAuthenticated, fetchBooking]);
+
+  const roomName = useMemo(() => {
+    if (booking?.roomName) return booking.roomName;
+    const room = property?.rooms?.find((r) => r.id === booking?.roomId) || property?.rooms?.[0];
+    return room?.name || "Selected room";
+  }, [booking, property]);
+
   const share = async () => {
     const url = typeof window !== "undefined" ? window.location.href : "";
-    const text = property
-      ? `I just booked ${property.name} in Jos with JosStay. Ref: ${params.reference}`
-      : `My JosStay booking ${params.reference}`;
+    const text = `My JosStay booking ${bookingReference}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: "My JosStay booking", text, url });
@@ -46,64 +115,165 @@ export function ConfirmationView() {
     }
   };
 
-  if (!hydrated && !booking) {
+  const handleRetryPayment = async () => {
+    if (!booking?.reference || retryingPayment) return;
+    setRetryingPayment(true);
+    try {
+      const result = await initializePayment(booking.reference);
+      const updatedBooking = result?.booking || booking;
+      const payment = result?.payment;
+
+      if (updatedBooking?.reference) setBooking(updatedBooking);
+
+      const paystackPublicKey = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "";
+      if (payment?.provider === "paystack" && payment?.reference) {
+        if (paystackPublicKey) {
+          const inlineResult = await openPaystackInline({
+            key: paystackPublicKey,
+            email: payment.email || updatedBooking?.guest?.email || booking.guest?.email,
+            amountKobo: payment.amountKobo,
+            amount: payment.amount ?? updatedBooking?.total ?? booking.total,
+            reference: payment.reference,
+            currency: payment.currency || updatedBooking?.currency || "NGN",
+            method: updatedBooking?.paymentMethod || booking.paymentMethod || "card",
+            metadata: {
+              bookingReference: updatedBooking?.reference || booking.reference,
+              custom_fields: [
+                {
+                  display_name: "Booking Reference",
+                  variable_name: "booking_reference",
+                  value: updatedBooking?.reference || booking.reference,
+                },
+              ],
+            },
+          });
+
+          if (inlineResult?.status === "success") {
+            const paidRef = inlineResult?.response?.reference || payment.reference;
+            try {
+              await api.get(`/api/payments/paystack/verify?reference=${encodeURIComponent(paidRef)}`, { cache: "no-store" });
+            } catch {}
+            const refreshed = await fetchBooking(booking.reference, { cache: "no-store" }).catch(() => null);
+            if (refreshed) setBooking(refreshed);
+            toast("Payment received. Confirming your booking…", "success");
+            router.replace(`/confirmation/${encodeURIComponent(booking.reference)}?reference=${encodeURIComponent(paidRef)}`);
+            return;
+          }
+
+          toast("Payment was not completed. You can try again.", "info");
+          return;
+        }
+
+        if (payment.authorizationUrl) {
+          window.location.assign(payment.authorizationUrl);
+          return;
+        }
+      }
+
+      toast("Could not start payment for this booking", "error");
+    } catch (err) {
+      toast(err?.message || "Could not initialize payment", "error");
+    } finally {
+      setRetryingPayment(false);
+    }
+  };
+
+  if (auth.isLoading || loading) {
     return (
       <div className="container-page max-w-2xl py-10">
-        <SkeletonCard />
+        <LoadingResults count={2} />
+        {verifying && <p className="mt-3 text-center text-[12px] text-muted">Confirming payment…</p>}
       </div>
     );
   }
 
-  if (!booking || !property) {
+  if (error === "auth_required" || (!auth.isAuthenticated && !booking)) {
     return (
       <div className="container-page max-w-2xl py-16">
         <EmptyState
-          icon="alert"
-          title="Booking not found"
-          description="We couldn't find that reference on this device. Check My bookings, or start a new search."
-          actionLabel="View my bookings"
-          onAction={() => {
-            window.location.href = "/bookings";
-          }}
+          icon="calendar"
+          title="Sign in to view this booking"
+          description="For your security, booking details are available when you are signed in."
+          actionLabel="Sign in"
+          onAction={() => router.push("/account")}
         />
       </div>
     );
   }
 
-  const room = property.rooms.find((r) => r.id === booking.roomId) || property.rooms[0];
+  if (error === "not_found" || (!booking && error)) {
+    return (
+      <div className="container-page max-w-2xl py-16">
+        {error === "not_found" ? (
+          <EmptyState
+            icon="alert"
+            title="Booking not found"
+            description="We couldn't find this booking. Check your bookings or contact support if you need help."
+            actionLabel="View my bookings"
+            onAction={() => router.push("/bookings")}
+          />
+        ) : (
+          <ErrorState
+            title="Could not load booking"
+            description={error}
+            onRetry={() => router.refresh()}
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (!booking) {
+    return (
+      <div className="container-page max-w-2xl py-16">
+        <EmptyState
+          icon="alert"
+          title="Booking not found"
+          description="We couldn't find this booking."
+          actionLabel="View my bookings"
+          onAction={() => router.push("/bookings")}
+        />
+      </div>
+    );
+  }
+
   const nights = Math.max(
     1,
     Math.round(
-      (new Date(`${booking.checkOut}T12:00:00`) - new Date(`${booking.checkIn}T12:00:00`)) / 86400000
-    )
+      (new Date(`${booking.checkOut}T12:00:00`) - new Date(`${booking.checkIn}T12:00:00`)) / 86400000,
+    ),
   );
+
+  const isPaid = booking.paymentStatus === "paid";
+  const isFailedPayment = booking.paymentStatus === "failed";
+  const isPendingPayment = !isPaid && ["pending", "initialized", "abandoned", undefined, null].includes(booking.paymentStatus) && booking.status !== "cancelled";
+  const canRetryPayment = !isPaid && !["cancelled", "completed", "no_show"].includes(booking.status) && booking.paymentStatus !== "paid";
 
   const rows = [
     { label: "Reference", value: booking.reference, mono: true },
     { label: "Guest", value: `${booking.guest?.firstName || ""} ${booking.guest?.lastName || ""}`.trim() || "Guest" },
-    { label: "Stay", value: `${property.name} · ${room.name}` },
+    { label: "Stay", value: `${booking.propertyName || property?.name || "Stay"} · ${roomName}` },
     { label: "Dates", value: `${formatDate(booking.checkIn)} → ${formatDate(booking.checkOut)}` },
-    { label: "Guests", value: `${booking.guests} guest${booking.guests === 1 ? "" : "s"} · ${nights} night${nights === 1 ? "" : "s"}` },
-    { label: "Payment", value: booking.paymentMethod === "card" ? "Card (Paystack)" : booking.paymentMethod === "bank" ? "Bank transfer" : "USSD" },
+    { label: "Guests", value: `${booking.guests || 1} guest${(booking.guests || 1) === 1 ? "" : "s"} · ${nights} night${nights === 1 ? "" : "s"}` },
+    { label: "Payment", value: booking.paymentMethod === "card" ? "Card" : booking.paymentMethod === "bank" ? "Bank transfer" : "USSD" },
   ];
-
-  if (booking.bundleFlight) {
-    rows.push({
-      label: "Flight bundle",
-      value: `${booking.bundleFlight.origin} (${booking.bundleFlight.originCode}) → Jos · ${booking.bundleFlight.passengers} passenger${booking.bundleFlight.passengers === 1 ? "" : "s"}`,
-    });
-  }
 
   return (
     <div className="container-page max-w-4xl pb-16 pt-8 sm:pt-12">
       <div className="text-center">
-        <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-gold-500 text-plum-900 animate-slide-up">
-          <Icon name="check" className="h-7 w-7" strokeWidth={2.4} />
+        <span className={`mx-auto grid h-14 w-14 place-items-center rounded-full ${isPaid ? "bg-gold-500 text-plum-900" : isFailedPayment ? "bg-red-100 text-red-700" : "bg-plum-100 text-plum-700"} animate-slide-up`}>
+          <Icon name={isPaid ? "check" : isFailedPayment ? "x" : "clock"} className="h-7 w-7" strokeWidth={2.4} />
         </span>
-        <span className="eyebrow mt-6">Booking confirmed</span>
-        <h1 className="mt-4 font-display text-[34px] font-bold leading-[1.02] tracking-tightest text-ink sm:text-[46px]">You&apos;re booked.</h1>
+        <span className="eyebrow mt-6">{isPaid ? "Booking confirmed" : isFailedPayment ? "Payment not completed" : "Booking created"}</span>
+        <h1 className="mt-4 font-display text-[34px] font-bold leading-[1.02] tracking-tightest text-ink sm:text-[46px]">
+          {isPaid ? "You\u2019re booked." : isFailedPayment ? "Payment was not completed." : "Almost there."}
+        </h1>
         <p className="mx-auto mt-3 max-w-md text-[13.5px] leading-relaxed text-muted">
-          Your stay in Jos is confirmed. A confirmation has been sent to <strong className="font-semibold text-ink">{booking.guest?.email || "your email"}</strong> (demo — no email is actually sent).
+          {isPaid
+            ? `Your booking details are available below${booking.guest?.email ? ` for ${booking.guest.email}` : ""}.`
+            : isFailedPayment
+              ? "Your booking was created but payment was not completed. You can try again to confirm your stay."
+              : "Your booking was created. If you just completed payment, confirmation may take a moment to update."}
         </p>
 
         <div className="mt-5 inline-flex items-center gap-3 rounded-lg border border-line bg-white px-4 py-2.5">
@@ -127,22 +297,33 @@ export function ConfirmationView() {
             <Icon name={copied ? "check" : "copy"} className="h-4 w-4" />
           </button>
         </div>
+
+        {canRetryPayment && (
+          <div className="mt-5 flex flex-col items-center gap-2">
+            <Button onClick={handleRetryPayment} loading={retryingPayment} icon={retryingPayment ? undefined : "lock"} size="lg">
+              {retryingPayment ? "Starting payment…" : isFailedPayment ? "Try payment again" : "Complete payment"}
+            </Button>
+            <p className="text-[11px] text-muted">Secure payment powered by Paystack. Your booking total is confirmed by the server.</p>
+          </div>
+        )}
       </div>
 
       <div className="mt-8 overflow-hidden rounded-xl border border-line bg-white shadow-card">
         <div className="flex gap-4 border-b border-line p-4 sm:p-5">
-          <img src={property.images[0]} alt={property.name} className="h-[76px] w-24 shrink-0 rounded-lg object-cover sm:h-24 sm:w-32" />
+          {property?.images?.[0] ? (
+            <img src={property.images[0]} alt={property.name || booking.propertyName || "Stay"} className="h-[76px] w-24 shrink-0 rounded-lg object-cover sm:h-24 sm:w-32" />
+          ) : (
+            <div className="h-[76px] w-24 shrink-0 rounded-lg bg-canvas sm:h-24 sm:w-32" />
+          )}
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap gap-1.5">
-              <VerifiedBadge />
-              <Badge tone="neutral">{typeLabel(property.type)}</Badge>
+              {property?.verified ? <Badge tone="verified" icon="shield">Verified</Badge> : null}
+              {property?.type ? <Badge tone="neutral">{typeLabel(property.type)}</Badge> : null}
+              {isPendingPayment ? <Badge tone="warning" icon="clock">Payment pending</Badge> : null}
+              {isFailedPayment ? <Badge tone="danger" icon="x">Payment failed</Badge> : null}
             </div>
-            <h2 className="mt-1.5 truncate font-display text-[17px] font-bold text-ink">{property.name}</h2>
-            <p className="text-[11.5px] text-muted">{property.area}, Jos · {room.name}</p>
-            <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700">
-              <Icon name="checkCircle" className="h-3.5 w-3.5" />
-              Confirmed · free cancellation on eligible stays
-            </p>
+            <h2 className="mt-1.5 truncate font-display text-[17px] font-bold text-ink">{booking.propertyName || property?.name || "Stay"}</h2>
+            <p className="text-[11.5px] text-muted">{[property?.area, "Jos"].filter(Boolean).join(", ")} · {roomName}</p>
           </div>
         </div>
 
@@ -156,51 +337,37 @@ export function ConfirmationView() {
           {booking.airportPickup && (
             <div className="sm:col-span-2">
               <p className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-muted">Add-on</p>
-              <p className="mt-1 text-[13px] font-medium text-ink">Airport pickup · driver meets you at Yakubu Gowon Airport</p>
+              <p className="mt-1 text-[13px] font-medium text-ink">Airport pickup requested</p>
             </div>
           )}
         </div>
 
         <div className="flex items-center justify-between border-t border-line bg-canvas px-4 py-4 sm:px-5">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted">Total paid</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted">{isPaid ? "Total paid" : "Total"}</p>
             <p className="mt-1 font-display text-[22px] font-bold leading-none text-ink">{format(booking.total || 0)}</p>
-            <p className="mt-1 text-[10.5px] text-muted">No hidden fees · Paystack secured</p>
+            <p className="mt-1 text-[10.5px] text-muted">Final amount confirmed by JosStay.</p>
           </div>
-          <Badge tone="success" icon="checkCircle">Paid</Badge>
+          {isPaid ? <Badge tone="success" icon="checkCircle">Paid</Badge> : isFailedPayment ? <Badge tone="danger" icon="x">Not paid</Badge> : <Badge tone="warning" icon="clock">Pending</Badge>}
         </div>
       </div>
 
       <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
-        <Button href="/bundle" variant="gold" icon="plane" full>Add flight</Button>
-        <Button href="/bookings" variant="secondary" full>View booking</Button>
+        <Button href="/bookings" variant="secondary" full>View bookings</Button>
+        <Button href="/search" variant="gold" icon="search" full>Find another stay</Button>
         <Button variant="ghost" icon={copied ? "check" : "share"} onClick={share} full>{copied ? "Copied" : "Share"}</Button>
       </div>
 
       <div className="mt-5 rounded-xl border border-line bg-white p-5 sm:p-6">
-        <h3 className="font-display text-[17px] font-bold text-ink">What happens next</h3>
-        <ol className="mt-4 space-y-3.5">
-          {[
-            "Your host is notified and will confirm your arrival time.",
-            "You'll get directions and check-in details 24 hours before arrival (Brevo email).",
-            booking.airportPickup ? "Your driver will be waiting at arrivals with your name." : "Need a ride? Add an airport pickup from My bookings.",
-            "Support is on WhatsApp 24/7 if anything changes.",
-          ].map((step, i) => (
-            <li key={step} className="flex items-start gap-3 text-[12.5px] leading-relaxed text-muted">
-              <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full bg-plum-50 text-[10px] font-bold text-plum-700">{i + 1}</span>
-              {step}
-            </li>
-          ))}
-        </ol>
+        <h3 className="font-display text-[17px] font-bold text-ink">Need help?</h3>
+        <p className="mt-2 text-[12.5px] leading-relaxed text-muted">If you have questions about this booking or payment status, contact support with your booking reference.</p>
         <div className="mt-4 flex items-center gap-2 border-t border-line pt-4">
           <Icon name="whatsapp" className="h-4 w-4 text-emerald-600" />
-          <a href={supportWhatsAppUrl()} target="_blank" rel="noreferrer" className="text-[12px] font-semibold text-emerald-700 underline underline-offset-4">Chat with support on WhatsApp</a>
+          <a href={supportWhatsAppUrl(`Hi JosStay, I need help with booking ${booking.reference}.`)} target="_blank" rel="noreferrer" className="text-[12px] font-semibold text-emerald-700 underline underline-offset-4">Chat with support on WhatsApp</a>
         </div>
       </div>
 
       <div className="mt-5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-[11px] text-muted">
-        <Icon name="shield" className="h-3.5 w-3.5 text-plum-600" />
-        Demo booking · sample data · no payment was taken
         <Link href="/" className="font-semibold text-plum-700 underline decoration-plum-300 underline-offset-4">Back home</Link>
       </div>
     </div>

@@ -1,6 +1,10 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AREAS, properties } from "@josstay/shared";
+import { AREAS as fallbackAreas, properties as fallbackProperties } from "@josstay/shared";
 import { Icon } from "@/components/ui/Icon";
+import { api } from "@/lib/api";
 
 const areaMeta = {
   "Jos North": {
@@ -25,7 +29,42 @@ const areaMeta = {
   },
 };
 
+const fallbackMeta = {
+  image:
+    "https://images.pexels.com/photos/6077368/pexels-photo-6077368.jpeg?auto=compress&cs=tinysrgb&w=1200",
+  blurb: "Explore stays in this area",
+};
+
 export function PopularAreas() {
+  const [properties, setProperties] = useState(Array.isArray(fallbackProperties) ? fallbackProperties : []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await api.get("/api/properties", { cache: "no-store" });
+        const data = Array.isArray(res?.data) ? res.data : [];
+        if (!active) return;
+        if (data.length) setProperties(data);
+      } catch {
+        // Keep fallback content if API is unavailable.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const areas = useMemo(() => {
+    const known = Array.isArray(fallbackAreas) ? fallbackAreas : [];
+    const discovered = [...new Set((properties || []).map((p) => p?.area).filter(Boolean))];
+    const merged = [...known];
+    for (const area of discovered) {
+      if (!merged.includes(area)) merged.push(area);
+    }
+    return merged.slice(0, 4);
+  }, [properties]);
+
   return (
     <section className="container-page pt-16 sm:pt-24">
       <span className="eyebrow">Explore the city</span>
@@ -34,9 +73,9 @@ export function PopularAreas() {
       </h2>
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {AREAS.map((area) => {
-          const count = properties.filter((p) => p.area === area).length;
-          const meta = areaMeta[area];
+        {areas.map((area) => {
+          const count = (properties || []).filter((p) => p.area === area).length;
+          const meta = areaMeta[area] || fallbackMeta;
           return (
             <Link
               key={area}

@@ -1,12 +1,42 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { properties } from "@josstay/shared";
+import { properties as fallbackProperties } from "@josstay/shared";
 import { PropertyCard } from "@/components/shared/PropertyCard";
+import { SkeletonCard } from "@/components/shared/states";
 import { Icon } from "@/components/ui/Icon";
+import { api } from "@/lib/api";
+
+const selectPopular = (list) =>
+  [...(Array.isArray(list) ? list : [])]
+    .sort((a, b) => (Number(b.rating) || 0) - (Number(a.rating) || 0) || (Number(b.reviewCount) || 0) - (Number(a.reviewCount) || 0))
+    .slice(0, 3);
 
 export function PopularStays() {
-  const popular = [...properties]
-    .sort((a, b) => b.rating - a.rating || b.reviewCount - a.reviewCount)
-    .slice(0, 3);
+  const [properties, setProperties] = useState(() => selectPopular(fallbackProperties));
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await api.get("/api/properties", { cache: "no-store" });
+        const data = Array.isArray(res?.data) ? res.data : [];
+        if (!active) return;
+        if (data.length) setProperties(selectPopular(data));
+      } catch {
+        // Keep fallback content if API is unavailable.
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const popular = useMemo(() => selectPopular(properties), [properties]);
 
   return (
     <section className="container-page pt-14 sm:pt-20">
@@ -26,9 +56,17 @@ export function PopularStays() {
       </div>
 
       <div className="mt-8 grid gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
-        {popular.map((property) => (
-          <PropertyCard key={property.id} property={property} />
-        ))}
+        {loading && popular.length === 0 ? (
+          <>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </>
+        ) : (
+          popular.map((property) => (
+            <PropertyCard key={property.slug || property.id} property={property} />
+          ))
+        )}
       </div>
     </section>
   );

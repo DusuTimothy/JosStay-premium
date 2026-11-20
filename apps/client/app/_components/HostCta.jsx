@@ -24,7 +24,7 @@ export function HostCta() {
         </Button>
       </div>
       <p className="mt-6 text-center text-[11px] text-muted">
-        All listings, reviews and prices on this site are sample data for the demo.
+        Listings are reviewed for quality and safety. Pricing and availability are confirmed before payment.
       </p>
     </section>
   );

@@ -1,29 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  addDays,
-  formatDate,
-  getProperty,
-  quoteStay,
-  toIso,
-  typeLabel,
-} from "@josstay/shared";
+import { formatDate, getProperty, quoteStay, typeLabel } from "@josstay/shared";
 import { PriceSummary } from "@/components/shared/PriceSummary";
 import { Button } from "@/components/ui/Button";
-import { Badge, VerifiedBadge } from "@/components/ui/Badge";
+import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
-import { useBooking, useCurrency, useToast } from "@/components/providers";
-import { EmptyState } from "@/components/shared/states";
-
-const today = toIso(new Date());
+import { useAuth, useBooking, useCurrency, useToast } from "@/components/providers";
+import { api } from "@/lib/api";
+import { openPaystackInline } from "@/lib/paystackInline";
+import { EmptyState, ErrorState, LoadingResults } from "@/components/shared/states";
 
 const PAYMENT_METHODS = [
-  { id: "card", label: "Card", description: "Visa, Mastercard or Verve", icon: "card" },
-  { id: "bank", label: "Bank transfer", description: "Wema, GTBank, Zenith, Access", icon: "bank" },
-  { id: "ussd", label: "USSD", description: "Dial a code from your phone", icon: "phone" },
+  { id: "card", label: "Card", description: "Pay securely with card", icon: "card" },
+  { id: "bank", label: "Bank transfer", description: "Pay via bank options", icon: "bank" },
+  { id: "ussd", label: "USSD", description: "Pay with USSD where available", icon: "phone" },
 ];
 
 function Field({ label, error, children, hint }) {
@@ -52,17 +45,17 @@ function SectionCard({ number, title, aside, children }) {
   );
 }
 
-function formatCard(value) {
-  return value.replace(/\D/g, "").slice(0, 16).replace(/(.{4})/g, "$1 ").trim();
-}
-
 export function CheckoutView() {
   const router = useRouter();
-  const { draft, setDraft, createBooking } = useBooking();
+  const auth = useAuth();
+  const { draft, setDraft, clearDraft, createBooking } = useBooking();
   const { toast } = useToast();
   const { format, currency } = useCurrency();
 
-  const property = draft ? getProperty(draft.propertySlug) : null;
+  const [property, setProperty] = useState(null);
+  const [propertyLoading, setPropertyLoading] = useState(false);
+  const [propertyError, setPropertyError] = useState("");
+
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -73,51 +66,59 @@ export function CheckoutView() {
   });
   const [pickup, setPickup] = useState(draft?.airportPickup || false);
   const [method, setMethod] = useState("card");
-  const [card, setCard] = useState({ number: "", name: "", expiry: "", cvv: "" });
   const [errors, setErrors] = useState({});
-  const [paymentError, setPaymentError] = useState("");
+  const [submitError, setSubmitError] = useState("");
   const [paying, setPaying] = useState(false);
+
+  useEffect(() => {
+    if (!draft?.propertySlug) return;
+    let active = true;
+    setPropertyLoading(true);
+    setPropertyError("");
+
+    (async () => {
+      try {
+        const res = await api.get(`/api/properties/${encodeURIComponent(draft.propertySlug)}`, { cache: "no-store" });
+        if (!active) return;
+        setProperty(res?.data || null);
+      } catch (error) {
+        if (!active) return;
+        // Fallback to bundled data for resilience in demo/local environments.
+        const fallback = getProperty(draft.propertySlug);
+        if (fallback) setProperty(fallback);
+        else setPropertyError(error?.message || "Could not load property details");
+      } finally {
+        if (active) setPropertyLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [draft?.propertySlug]);
+
+  useEffect(() => {
+    if (!auth.user) return;
+    setForm((f) => ({
+      ...f,
+      email: f.email || auth.user.email || "",
+      firstName: f.firstName || (auth.user.name ? auth.user.name.split(" ")[0] : ""),
+      lastName: f.lastName || (auth.user.name ? auth.user.name.split(" ").slice(1).join(" ") : ""),
+    }));
+  }, [auth.user]);
 
   const quote = useMemo(() => {
     if (!property || !draft) return null;
-    return quoteStay(property, draft.checkIn, draft.checkOut, {
-      roomId: draft.roomId,
-      airportPickup: pickup,
-      bundleDiscount: draft.bundle,
-    });
+    try {
+      return quoteStay(property, draft.checkIn, draft.checkOut, {
+        roomId: draft.roomId,
+        airportPickup: pickup,
+        bundleDiscount: draft.bundle,
+      });
+    } catch {
+      return null;
+    }
   }, [property, draft, pickup]);
-
-  const useSample = () => {
-    setDraft({
-      propertySlug: "crestview-boutique-hotel",
-      roomId: "deluxe",
-      checkIn: addDays(today, 7),
-      checkOut: addDays(today, 9),
-      guests: 2,
-      airportPickup: false,
-      bundle: false,
-    });
-  };
-
-  if (!draft || !property || !quote) {
-    return (
-      <div className="container-page py-16">
-        <EmptyState
-          icon="calendar"
-          title="Your booking is empty"
-          description="Choose a stay and your dates first, then we'll bring you back here to complete the booking."
-          actionLabel="Browse stays"
-          onAction={() => router.push("/search")}
-        >
-          <div className="mt-4">
-            <button type="button" onClick={useSample} className="text-xs font-semibold text-plum-700 underline underline-offset-4">
-              Or start a sample booking at Crestview Boutique Hotel
-            </button>
-          </div>
-        </EmptyState>
-      </div>
-    );
-  }
 
   const update = (key, value) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -131,20 +132,17 @@ export function CheckoutView() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email.trim())) next.email = "Enter a valid email address";
     if (form.phone.replace(/\D/g, "").length < 10) next.phone = "Enter a valid phone number";
     if (!form.terms) next.terms = "Please accept the booking terms";
-
-    if (method === "card") {
-      if (card.number.replace(/\s/g, "").length !== 16) next.cardNumber = "Enter a 16-digit card number";
-      if (!card.name.trim()) next.cardName = "Enter the name on the card";
-      if (!/^\d{2}\/\d{2}$/.test(card.expiry)) next.expiry = "Use MM/YY";
-      if (card.cvv.length < 3) next.cvv = "Enter the CVV";
-    }
-
     setErrors(next);
     return Object.keys(next).length === 0;
   };
 
-  const pay = async () => {
-    setPaymentError("");
+  const submitBooking = async () => {
+    setSubmitError("");
+    if (!auth.isAuthenticated) {
+      router.push("/account");
+      return;
+    }
+    if (!draft || !property) return;
     if (!validate()) {
       window.scrollTo({ top: 0, behavior: "smooth" });
       toast("Please check the highlighted fields", "error");
@@ -152,40 +150,156 @@ export function CheckoutView() {
     }
 
     setPaying(true);
-    await new Promise((resolve) => setTimeout(resolve, 1800));
+    try {
+      const payload = {
+        propertySlug: draft.propertySlug,
+        ...(draft.roomId ? { roomId: draft.roomId } : {}),
+        checkIn: draft.checkIn,
+        checkOut: draft.checkOut,
+        guests: Number(draft.guests || 1),
+        airportPickup: Boolean(pickup),
+        paymentMethod: method,
+        ...(form.requests.trim() ? { requests: form.requests.trim() } : {}),
+        guest: {
+          firstName: form.firstName.trim(),
+          lastName: form.lastName.trim(),
+          email: form.email.trim().toLowerCase(),
+          phone: form.phone.trim(),
+        },
+      };
 
-    if (method === "card" && card.number.replace(/\s/g, "").endsWith("0000")) {
-      setPaying(false);
-      setPaymentError("Your card was declined by the demo gateway. No money was taken. Try another card or use bank transfer.");
+      const result = await createBooking(payload);
+      const booking = result?.booking;
+      const payment = result?.payment;
+
+      // Persist pickup choice in draft for UX continuity; server is source of truth for booking.
+      setDraft({ ...draft, airportPickup: Boolean(pickup) });
+
+      const paystackPublicKey = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "";
+
+      if (payment?.provider === "paystack" && payment?.reference) {
+        // Prefer Paystack Inline checkout when configured.
+        if (paystackPublicKey) {
+          const inlineResult = await openPaystackInline({
+            key: paystackPublicKey,
+            email: payment.email || payload.guest.email,
+            amountKobo: payment.amountKobo,
+            amount: payment.amount ?? booking?.total,
+            reference: payment.reference,
+            currency: payment.currency || booking?.currency || "NGN",
+            method,
+            metadata: {
+              bookingReference: booking?.reference,
+              custom_fields: [
+                {
+                  display_name: "Booking Reference",
+                  variable_name: "booking_reference",
+                  value: booking?.reference || "",
+                },
+              ],
+            },
+          });
+
+          if (inlineResult?.status === "success") {
+            const paidRef = inlineResult?.response?.reference || payment.reference;
+            try {
+              await api.get(`/api/payments/paystack/verify?reference=${encodeURIComponent(paidRef)}`, {
+                cache: "no-store",
+              });
+            } catch {
+              // Webhook/confirmation page can reconcile final state; continue to confirmation.
+            }
+            clearDraft();
+            toast("Payment received. Confirming your booking…", "success");
+            router.push(`/confirmation/${encodeURIComponent(booking.reference)}?reference=${encodeURIComponent(paidRef)}`);
+            return;
+          }
+
+          // Inline closed/cancelled: booking reservation exists with initialized payment.
+          toast("Payment was not completed. You can try again from your booking.", "info");
+          router.push(`/confirmation/${encodeURIComponent(booking.reference)}`);
+          return;
+        }
+
+        // Fallback to hosted Paystack checkout if inline key is unavailable.
+        if (payment.authorizationUrl) {
+          window.location.assign(payment.authorizationUrl);
+          return;
+        }
+      }
+
+      if (payment?.authorizationUrl) {
+        window.location.assign(payment.authorizationUrl);
+        return;
+      }
+
+      if (booking?.reference) {
+        clearDraft();
+        toast(payment?.status === "paid" ? "Booking confirmed" : "Booking created", "success");
+        router.push(`/confirmation/${booking.reference}`);
+        return;
+      }
+
+      throw new Error("Booking could not be completed");
+    } catch (error) {
+      const message = error?.message || "Could not complete your booking";
+      setSubmitError(message);
+      toast(message, "error");
       window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
+    } finally {
+      setPaying(false);
     }
-
-    const booking = createBooking({
-      propertySlug: property.slug,
-      roomId: quote.room.id,
-      checkIn: draft.checkIn,
-      checkOut: draft.checkOut,
-      guests: draft.guests,
-      airportPickup: pickup,
-      bundle: Boolean(draft.bundle),
-      bundleFlight: draft.bundleFlight || null,
-      paymentMethod: method,
-      guest: {
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim(),
-        email: form.email.trim(),
-        phone: form.phone.trim(),
-      },
-      requests: form.requests.trim(),
-    });
-
-    setPaying(false);
-    toast("Payment successful — booking confirmed", "success");
-    router.push(`/confirmation/${booking.reference}`);
   };
 
-  const grandTotal = quote.total + (draft.bundleFlight?.flightTotal || 0);
+  if (!draft) {
+    return (
+      <div className="container-page py-16">
+        <EmptyState
+          icon="calendar"
+          title="Your booking is empty"
+          description="Choose a stay and your dates first, then come back here to complete your booking."
+          actionLabel="Browse stays"
+          onAction={() => router.push("/search")}
+        />
+      </div>
+    );
+  }
+
+  if (propertyLoading && !property) {
+    return (
+      <div className="container-page py-10">
+        <LoadingResults count={2} />
+      </div>
+    );
+  }
+
+  if (propertyError && !property) {
+    return (
+      <div className="container-page py-16">
+        <ErrorState
+          title="Could not load checkout"
+          description={propertyError}
+          onRetry={() => router.refresh()}
+        />
+      </div>
+    );
+  }
+
+  if (!property || !quote) {
+    return (
+      <div className="container-page py-16">
+        <EmptyState
+          icon="alert"
+          title="Unable to prepare checkout"
+          description="We couldn't load the selected stay details. Please try selecting your stay again."
+          actionLabel="Back to search"
+          onAction={() => router.push("/search")}
+        />
+      </div>
+    );
+  }
+
+  const grandTotal = quote.total;
 
   return (
     <div className="container-page pb-32 pt-6 lg:pb-16 lg:pt-8">
@@ -199,24 +313,32 @@ export function CheckoutView() {
           <span className="eyebrow">Secure checkout</span>
           <h1 className="mt-4 font-display text-[34px] font-bold leading-none tracking-tightest text-ink sm:text-[42px]">Confirm and pay</h1>
         </div>
-        <ol className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
-          <li className="text-muted">1. Stay</li>
-          <Icon name="chevronRight" className="h-3 w-3 text-line" />
-          <li className="text-plum-700">2. Details</li>
-          <Icon name="chevronRight" className="h-3 w-3 text-line" />
-          <li className="text-muted">3. Payment</li>
-        </ol>
+        <Badge tone="verified" icon="lock">Secure booking</Badge>
       </div>
+
+      {!auth.isLoading && !auth.isAuthenticated && (
+        <div className="mt-6 rounded-xl border border-gold-200 bg-cream p-4 sm:p-5">
+          <p className="text-[13px] font-semibold text-ink">Sign in to complete your booking</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-muted">Bookings are linked to your account for secure payment confirmation and management.</p>
+          <div className="mt-3">
+            <Button href="/account" size="sm" iconRight="arrowRight">Sign in or create account</Button>
+          </div>
+        </div>
+      )}
 
       <div className="mt-7 grid gap-6 lg:grid-cols-[1fr_380px] lg:gap-8">
         <div className="space-y-4">
           <div className="rounded-xl border border-line bg-white p-4">
             <div className="flex gap-3.5">
-              <img src={property.images[0]} alt={property.name} className="h-[84px] w-[104px] shrink-0 rounded-lg object-cover sm:h-24 sm:w-32" />
+              {property.images?.[0] ? (
+                <img src={property.images[0]} alt={property.name} className="h-[84px] w-[104px] shrink-0 rounded-lg object-cover sm:h-24 sm:w-32" />
+              ) : (
+                <div className="h-[84px] w-[104px] shrink-0 rounded-lg bg-canvas sm:h-24 sm:w-32" />
+              )}
               <div className="min-w-0 flex-1">
                 <p className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-plum-600">{typeLabel(property.type)} · {property.area}, Jos</p>
                 <h2 className="mt-1.5 truncate font-display text-[17px] font-bold text-ink sm:text-[19px]">{property.name}</h2>
-                <p className="mt-0.5 text-[11.5px] text-muted">{quote.room.name} · {draft.guests} guest{draft.guests === 1 ? "" : "s"}</p>
+                <p className="mt-0.5 text-[11.5px] text-muted">{quote.room?.name || "Selected room"} · {draft.guests} guest{draft.guests === 1 ? "" : "s"}</p>
                 <p className="mt-1.5 text-[11.5px] text-muted">
                   {formatDate(draft.checkIn, { year: undefined })} → {formatDate(draft.checkOut)} · {quote.nights} night{quote.nights === 1 ? "" : "s"}
                 </p>
@@ -225,29 +347,14 @@ export function CheckoutView() {
             </div>
           </div>
 
-          {draft.bundleFlight && (
-            <div className="rounded-xl border border-plum-200 bg-plum-50 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="inline-flex items-center gap-2 text-[12.5px] font-bold text-plum-700">
-                  <Icon name="plane" className="h-4 w-4" />
-                  Flight + stay bundle · {draft.bundleFlight.origin} → Jos
-                </p>
-                <Badge tone="gold">10% stay discount applied</Badge>
-              </div>
-              <p className="mt-1.5 text-[11.5px] leading-relaxed text-plum-700/80">
-                {draft.bundleFlight.passengers} passenger{draft.bundleFlight.passengers === 1 ? "" : "s"} · {format(draft.bundleFlight.flightTotal)} flight total included in your payment below.
-              </p>
-            </div>
-          )}
-
-          {paymentError && (
+          {submitError && (
             <div role="alert" className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
               <Icon name="alert" className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
               <div className="flex-1">
-                <p className="text-[13px] font-bold text-red-800">Payment failed</p>
-                <p className="mt-0.5 text-[11.5px] leading-relaxed text-red-700">{paymentError}</p>
+                <p className="text-[13px] font-bold text-red-800">Could not complete booking</p>
+                <p className="mt-0.5 text-[11.5px] leading-relaxed text-red-700">{submitError}</p>
               </div>
-              <button type="button" onClick={() => setPaymentError("")} className="text-red-700 transition hover:text-red-900" aria-label="Dismiss">
+              <button type="button" onClick={() => setSubmitError("")} className="text-red-700 transition hover:text-red-900" aria-label="Dismiss">
                 <Icon name="x" className="h-4 w-4" />
               </button>
             </div>
@@ -264,12 +371,12 @@ export function CheckoutView() {
               <Field label="Email address" error={errors.email}>
                 <input type="email" value={form.email} onChange={(e) => update("email", e.target.value)} className={`field ${errors.email ? "!border-red-400" : ""}`} placeholder="you@example.com" autoComplete="email" />
               </Field>
-              <Field label="Phone number" error={errors.phone} hint="We'll use this for arrival updates.">
+              <Field label="Phone number" error={errors.phone} hint="We'll use this for booking updates.">
                 <input type="tel" value={form.phone} onChange={(e) => update("phone", e.target.value)} className={`field ${errors.phone ? "!border-red-400" : ""}`} placeholder="+234 800 000 0000" autoComplete="tel" />
               </Field>
               <div className="sm:col-span-2">
-                <Field label="Special requests" hint="Optional — early check-in, high floor, dietary needs.">
-                  <textarea rows={3} value={form.requests} onChange={(e) => update("requests", e.target.value)} className="field resize-none" placeholder="Let your host know anything that would make your stay better." />
+                <Field label="Special requests" hint="Optional.">
+                  <textarea rows={3} value={form.requests} onChange={(e) => update("requests", e.target.value)} className="field resize-none" placeholder="Any requests for your stay." />
                 </Field>
               </div>
             </div>
@@ -279,14 +386,14 @@ export function CheckoutView() {
               <span className="flex-1">
                 <span className="flex items-center justify-between gap-2">
                   <span className="text-[13px] font-semibold text-ink">Add airport pickup</span>
-                  <span className="text-[12px] font-bold text-ink">+{format(12000)}</span>
+                  <span className="text-[12px] font-bold text-ink">Included in quote</span>
                 </span>
-                <span className="mt-0.5 block text-[11px] leading-relaxed text-muted">A driver meets you at Yakubu Gowon Airport and brings you to the property.</span>
+                <span className="mt-0.5 block text-[11px] leading-relaxed text-muted">If available for this stay, pickup will be reflected in the final price.</span>
               </span>
             </label>
           </SectionCard>
 
-          <SectionCard number="2" title="Payment method" aside={<Badge tone="verified" icon="lock">Paystack secured</Badge>}>
+          <SectionCard number="2" title="Payment" aside={<Badge tone="verified" icon="lock">Secured</Badge>}>
             <div className="grid gap-2 sm:grid-cols-3">
               {PAYMENT_METHODS.map((option) => {
                 const active = method === option.id;
@@ -294,7 +401,7 @@ export function CheckoutView() {
                   <button
                     key={option.id}
                     type="button"
-                    onClick={() => { setMethod(option.id); setPaymentError(""); }}
+                    onClick={() => setMethod(option.id)}
                     className={`rounded-lg border p-3 text-left transition ${active ? "border-plum-600 bg-plum-50/70" : "border-line hover:border-plum-300"}`}
                     aria-pressed={active}
                   >
@@ -308,102 +415,21 @@ export function CheckoutView() {
               })}
             </div>
 
-            {method === "card" && (
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <Field label="Card number" error={errors.cardNumber}>
-                    <input
-                      inputMode="numeric"
-                      value={card.number}
-                      onChange={(e) => {
-                        setCard((c) => ({ ...c, number: formatCard(e.target.value) }));
-                        setErrors((er) => ({ ...er, cardNumber: undefined }));
-                      }}
-                      className={`field font-mono tracking-wider ${errors.cardNumber ? "!border-red-400" : ""}`}
-                      placeholder="4242 4242 4242 4242"
-                    />
-                  </Field>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCard({
-                        number: "4242 4242 4242 4242",
-                        name: `${form.firstName || "Demo"} ${form.lastName || "Guest"}`.toUpperCase(),
-                        expiry: "12/28",
-                        cvv: "123",
-                      });
-                      setErrors((er) => ({ ...er, cardNumber: undefined, cardName: undefined, expiry: undefined, cvv: undefined }));
-                    }}
-                    className="mt-1.5 text-[10.5px] font-semibold text-plum-700 underline decoration-plum-300 underline-offset-4"
-                  >
-                    Use demo card details
-                  </button>
-                </div>
-                <Field label="Name on card" error={errors.cardName}>
-                  <input value={card.name} onChange={(e) => { setCard((c) => ({ ...c, name: e.target.value })); setErrors((er) => ({ ...er, cardName: undefined })); }} className={`field ${errors.cardName ? "!border-red-400" : ""}`} placeholder="TUNDE ADEYEMI" />
-                </Field>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Expiry" error={errors.expiry}>
-                    <input
-                      value={card.expiry}
-                      onChange={(e) => {
-                        let value = e.target.value.replace(/\D/g, "").slice(0, 4);
-                        if (value.length > 2) value = `${value.slice(0, 2)}/${value.slice(2)}`;
-                        setCard((c) => ({ ...c, expiry: value }));
-                        setErrors((er) => ({ ...er, expiry: undefined }));
-                      }}
-                      className={`field ${errors.expiry ? "!border-red-400" : ""}`}
-                      placeholder="MM/YY"
-                    />
-                  </Field>
-                  <Field label="CVV" error={errors.cvv}>
-                    <input
-                      inputMode="numeric"
-                      type="password"
-                      value={card.cvv}
-                      onChange={(e) => { setCard((c) => ({ ...c, cvv: e.target.value.replace(/\D/g, "").slice(0, 4) })); setErrors((er) => ({ ...er, cvv: undefined })); }}
-                      className={`field ${errors.cvv ? "!border-red-400" : ""}`}
-                      placeholder="123"
-                    />
-                  </Field>
-                </div>
-                <p className="rounded-lg bg-cream px-3 py-2 text-[11px] leading-relaxed text-ink/75 sm:col-span-2">
-                  <strong className="font-semibold text-ink">Demo payment.</strong> Any 16-digit number works. To preview a failed payment, use a card ending in <strong className="font-semibold text-ink">0000</strong>.
-                </p>
-              </div>
-            )}
-
-            {method === "bank" && (
-              <div className="mt-4 rounded-lg border border-line bg-canvas p-4">
-                <p className="text-[12px] font-semibold text-ink">Transfer to</p>
-                <div className="mt-2 grid gap-3 text-[12px] sm:grid-cols-3">
-                  <div><p className="text-muted">Account name</p><p className="font-semibold text-ink">JosStay Premium Ltd</p></div>
-                  <div><p className="text-muted">Account number</p><p className="font-mono font-semibold text-ink">0123456789</p></div>
-                  <div><p className="text-muted">Bank</p><p className="font-semibold text-ink">Wema Bank</p></div>
-                </div>
-                <p className="mt-3 text-[11px] leading-relaxed text-muted">Demo mode: no real transfer is required. Click the button below and we&apos;ll simulate a confirmed transfer.</p>
-              </div>
-            )}
-
-            {method === "ussd" && (
-              <div className="mt-4 rounded-lg border border-line bg-canvas p-4">
-                <p className="text-[12px] font-semibold text-ink">Dial on your phone</p>
-                <p className="mt-2 rounded-lg bg-white px-3 py-3 font-mono text-[17px] font-bold tracking-wide text-plum-700">*737*000*{grandTotal}#</p>
-                <p className="mt-2 text-[11px] leading-relaxed text-muted">Works with GTBank, Zenith, Access and First Bank. Demo mode: no charge will be made.</p>
-              </div>
-            )}
+            <div className="mt-4 rounded-lg border border-line bg-canvas p-4 text-[11.5px] leading-relaxed text-muted">
+              You&apos;ll complete payment securely. Final availability and amount are confirmed by the server before payment is accepted.
+            </div>
 
             <label className="mt-4 flex cursor-pointer items-start gap-2.5">
               <input type="checkbox" checked={form.terms} onChange={(e) => update("terms", e.target.checked)} className="mt-0.5 h-4 w-4 accent-plum-700" />
-              <span className="text-[11px] leading-relaxed text-muted">I agree to the JosStay booking terms and the cancellation policy. I understand this is a demo and no real payment will be taken.</span>
+              <span className="text-[11px] leading-relaxed text-muted">I agree to the booking terms and cancellation policy.</span>
             </label>
             {errors.terms && <p className="mt-1 text-[11px] font-medium text-red-600">{errors.terms}</p>}
 
             <div className="mt-5 hidden lg:block">
-              <Button full size="lg" loading={paying} onClick={pay} icon={paying ? undefined : "lock"}>
-                {paying ? "Processing payment…" : method === "card" ? `Pay ${format(grandTotal)}` : `Confirm booking · ${format(grandTotal)}`}
+              <Button full size="lg" loading={paying} disabled={!auth.isAuthenticated} onClick={submitBooking} icon={paying ? undefined : "lock"}>
+                {paying ? "Processing…" : `Continue to payment · ${format(grandTotal)}`}
               </Button>
-              <p className="mt-2 text-center text-[10.5px] text-muted">Your card details are encrypted. Free cancellation up to 48 hours before check-in on eligible stays.</p>
+              <p className="mt-2 text-center text-[10.5px] text-muted">Secure checkout powered by Paystack. Payment opens in a secure inline window when available.</p>
             </div>
           </SectionCard>
         </div>
@@ -414,22 +440,15 @@ export function CheckoutView() {
               <PriceSummary quote={quote} checkIn={draft.checkIn} checkOut={draft.checkOut} pickup={pickup} bundle={Boolean(draft.bundle)} flight={draft.bundleFlight} />
             </div>
 
-            {property.freeCancellation && (
-              <div className="flex items-start gap-2.5 rounded-lg bg-cream px-4 py-3 text-[11.5px] leading-relaxed text-ink/75">
-                <Icon name="checkCircle" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold-700" />
-                Free cancellation until 48 hours before check-in.
-              </div>
-            )}
-
             <div className="rounded-xl border border-line bg-white p-4">
               <p className="flex items-center gap-2 text-[12px] font-semibold text-ink"><Icon name="shield" className="h-4 w-4 text-plum-700" />Book with confidence</p>
               <ul className="mt-2 space-y-1.5 text-[11px] text-muted">
-                <li>Verified property and host</li>
-                <li>No hidden fees at checkout</li>
-                <li>24/7 WhatsApp support</li>
+                <li>Server-verified pricing and availability</li>
+                <li>Secure payment processing</li>
+                <li>Support available if you need help</li>
               </ul>
             </div>
-            <p className="px-1 text-[10.5px] leading-relaxed text-muted">Paying in {currency}. Totals include cleaning and service fees.</p>
+            <p className="px-1 text-[10.5px] leading-relaxed text-muted">Paying in {currency}.</p>
           </div>
         </aside>
       </div>
@@ -440,8 +459,8 @@ export function CheckoutView() {
             <p className="font-display text-[19px] font-bold leading-none text-ink">{format(grandTotal)}</p>
             <p className="mt-1 text-[10.5px] text-muted">{quote.nights} night{quote.nights === 1 ? "" : "s"} · fees included</p>
           </div>
-          <Button size="lg" loading={paying} onClick={pay} className="min-w-[170px]">
-            {paying ? "Processing…" : method === "card" ? "Pay securely" : "Confirm booking"}
+          <Button size="lg" loading={paying} disabled={!auth.isAuthenticated} onClick={submitBooking} className="min-w-[170px]">
+            {paying ? "Processing…" : "Continue"}
           </Button>
         </div>
       </div>
