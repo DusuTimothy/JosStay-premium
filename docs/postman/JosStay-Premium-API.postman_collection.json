@@ -1,0 +1,559 @@
+{
+  "info": {
+    "_postman_id": "f2b9f5d7-5b8f-4d9d-9d1f-7d8b8f4b2c10",
+    "name": "JosStay Premium API",
+    "description": "Postman collection for the JosStay Premium backend API.\n\nSetup:\n- Set `baseUrl` (default: http://localhost:4000).\n- Start the server (`npm run dev:server` or `npm run start:server`). Works in demo mode (`DATA_BACKEND=demo`) and Postgres mode when configured.\n- Auth-protected requests inherit collection Bearer auth using `{{token}}`.\n\nSuggested flow (Collection Runner order):\n1. Health & Meta / Currency / Properties requests\n2. Auth → Register (captures token and credentials)\n3. Auth → Login and/or Get current user\n4. Bookings → Create booking (captures `bookingReference`), List bookings, Cancel booking\n5. Host → Get host payouts (requires a host/admin token; guest tokens return 403)\n\nNotes:\n- `POST /api/auth/register` rate-limits via auth limiter; avoid rapid repeated runs.\n- Create booking uses dynamically generated future dates to reduce conflicts, but availability still depends on backend state.\n- Sample catalogue values: property slug `crestview-boutique-hotel`, room `deluxe`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "registeredEmail", "value": "", "type": "string" },
+    { "key": "registeredPassword", "value": "", "type": "string" },
+    { "key": "bookingReference", "value": "", "type": "string" },
+    { "key": "checkIn", "value": "2027-01-10", "type": "string" },
+    { "key": "checkOut", "value": "2027-01-13", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health & Meta",
+      "item": [
+        {
+          "name": "GET Health",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Service health check. Returns status, backend (`demo` or `postgres`), sampleData flag, and time."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Health payload is ok', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.status).to.eql('ok');",
+                  "  pm.expect(json.service).to.eql('josstay-api');",
+                  "  pm.expect(json).to.have.property('backend');",
+                  "  pm.expect(json).to.have.property('time');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Meta",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/meta",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "meta"]
+            },
+            "description": "Public metadata: amenities, areas, currency, backend, sampleData."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Meta includes amenities and currency', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('amenities');",
+                  "  pm.expect(json).to.have.property('areas');",
+                  "  pm.expect(json).to.have.property('currency');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Currency",
+      "item": [
+        {
+          "name": "GET Convert currency amount",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/currency/50000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "currency", "50000"]
+            },
+            "description": "Convert an NGN amount to formatted NGN/USD using the configured rate. Example amount: 50000."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Currency payload has ngn, usd, rate', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('ngn');",
+                  "  pm.expect(json).to.have.property('usd');",
+                  "  pm.expect(json).to.have.property('rate');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Properties",
+      "item": [
+        {
+          "name": "GET List properties",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/properties?destination=Jos&type=hotel&sort=recommended&limit=20&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "properties"],
+              "query": [
+                { "key": "destination", "value": "Jos", "description": "Search text matched against name/area/address" },
+                { "key": "type", "value": "hotel", "description": "hotel | apartment | airbnb | shortlet | guesthouse" },
+                { "key": "minPrice", "value": "0", "disabled": true },
+                { "key": "maxPrice", "value": "100000000", "disabled": true },
+                { "key": "rating", "value": "0", "disabled": true },
+                { "key": "amenities", "value": "wifi,parking", "disabled": true, "description": "Comma-separated amenity IDs" },
+                { "key": "freeCancellation", "value": "false", "disabled": true },
+                { "key": "maxDistance", "value": "0", "disabled": true },
+                { "key": "sort", "value": "recommended", "description": "recommended | price-asc | price-desc | rating | distance" },
+                { "key": "limit", "value": "20" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "List/search properties with optional filters. All query params are optional."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Returns property list payload', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('count');",
+                  "  pm.expect(json).to.have.property('data');",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Property by slug",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/properties/crestview-boutique-hotel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "properties", "crestview-boutique-hotel"]
+            },
+            "description": "Get a single property by slug. Example slug: crestview-boutique-hotel."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Returns property data', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('data');",
+                  "  pm.expect(json.data).to.have.property('slug');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Property availability",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/properties/crestview-boutique-hotel/availability",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "properties", "crestview-boutique-hotel", "availability"]
+            },
+            "description": "Get ~60 days of availability for a property slug. Returns days with date, available, and nightly price."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Returns availability days', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('property');",
+                  "  pm.expect(json).to.have.property('days');",
+                  "  pm.expect(json.days).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "POST Register",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Guest\",\n  \"email\": \"{{registeredEmail}}\",\n  \"password\": \"{{registeredPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "description": "Create a guest account. Registration always creates role `guest` (admin/host must be provisioned server-side). Password must be 12-72 characters. This request generates unique credentials and stores token/credentials in collection variables."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ts = Date.now();",
+                  "const rand = Math.floor(Math.random() * 100000);",
+                  "pm.collectionVariables.set('registeredEmail', `guest.${ts}.${rand}@example.com`);",
+                  "pm.collectionVariables.set('registeredPassword', 'Str0ngPass!2345');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('Returns token and user, saves token', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('data');",
+                  "  pm.expect(json.data).to.have.property('token');",
+                  "  pm.expect(json.data).to.have.property('user');",
+                  "  pm.collectionVariables.set('token', json.data.token);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Login",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{registeredEmail}}\",\n  \"password\": \"{{registeredPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Log in with email/password. Uses credentials saved by the Register request by default; update variables to test an existing user."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Returns token and user, saves token', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('data');",
+                  "  pm.expect(json.data).to.have.property('token');",
+                  "  pm.collectionVariables.set('token', json.data.token);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Current user (me)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Return the authenticated user. Requires Bearer token (`{{token}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Returns user profile', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('data');",
+                  "  pm.expect(json.data).to.have.property('email');",
+                  "  pm.expect(json.data).to.have.property('role');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Bookings",
+      "description": "Booking endpoints require authentication (guest token from Auth). Create → List → Cancel is the recommended order.",
+      "item": [
+        {
+          "name": "POST Create booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propertySlug\": \"crestview-boutique-hotel\",\n  \"roomId\": \"deluxe\",\n  \"checkIn\": \"{{checkIn}}\",\n  \"checkOut\": \"{{checkOut}}\",\n  \"guests\": 2,\n  \"airportPickup\": false,\n  \"paymentMethod\": \"card\",\n  \"requests\": \"Late check-in if possible\",\n  \"guest\": {\n    \"firstName\": \"Test\",\n    \"lastName\": \"Guest\",\n    \"email\": \"{{registeredEmail}}\",\n    \"phone\": \"+2348012345678\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "bookings"]
+            },
+            "description": "Create a booking (server-priced). Requires Bearer token. Example uses property `crestview-boutique-hotel`, room `deluxe`. Pre-request sets future check-in/out dates to reduce conflicts. paymentMethod: card | bank | ussd."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const startOffset = 30 + Math.floor(Math.random() * 200);",
+                  "const nights = 3;",
+                  "const checkIn = new Date();",
+                  "checkIn.setUTCHours(0, 0, 0, 0);",
+                  "checkIn.setUTCDate(checkIn.getUTCDate() + startOffset);",
+                  "const checkOut = new Date(checkIn);",
+                  "checkOut.setUTCDate(checkOut.getUTCDate() + nights);",
+                  "pm.collectionVariables.set('checkIn', checkIn.toISOString().slice(0, 10));",
+                  "pm.collectionVariables.set('checkOut', checkOut.toISOString().slice(0, 10));",
+                  "if (!pm.collectionVariables.get('registeredEmail')) {",
+                  "  pm.collectionVariables.set('registeredEmail', 'guest@example.com');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('Returns booking and saves reference', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('data');",
+                  "  pm.expect(json.data).to.have.property('reference');",
+                  "  pm.collectionVariables.set('bookingReference', json.data.reference);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET List bookings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "bookings"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "upcoming",
+                  "disabled": true,
+                  "description": "Optional: upcoming | confirmed | completed | cancelled | no_show"
+                }
+              ]
+            },
+            "description": "List bookings visible to the authenticated user (guest: own bookings; host/admin scoped by role). Optional `status` filter."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Returns booking list', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('count');",
+                  "  pm.expect(json).to.have.property('data');",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH Cancel booking",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings/{{bookingReference}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "bookings", "{{bookingReference}}", "cancel"]
+            },
+            "description": "Cancel an upcoming/confirmed booking by reference (e.g. JS-8F2K1Q). Uses `{{bookingReference}}` saved by Create booking. Only the owner (or admin/authorized host) can cancel; only upcoming bookings can be cancelled."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Booking cancelled', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('data');",
+                  "  pm.expect(json.data.status).to.eql('cancelled');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Host",
+      "description": "Host endpoints require a host or admin account. A guest token will receive 403 Forbidden.",
+      "item": [
+        {
+          "name": "GET Host payouts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/host/payouts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "host", "payouts"]
+            },
+            "description": "Get payout records for the authenticated host (or admin). Requires Bearer token with role `host` or `admin`. With a guest token this returns 403."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 (host/admin) or 401/403 (missing/guest token)', function () {",
+                  "  pm.expect([200, 401, 403]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('Returns payout data', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.be.an('object');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
