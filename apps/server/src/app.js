@@ -42,8 +42,8 @@ app.use(
       }
       return callback(new HttpError(403, "Origin not allowed"));
     },
-    methods: ["GET", "POST", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Authorization", "Content-Type", "X-Request-Id", "Idempotency-Key"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Authorization", "Content-Type", "X-Request-Id", "Idempotency-Key", "X-JosStay-Request"],
     exposedHeaders: ["X-Request-Id"],
     credentials: true,
     maxAge: 600,
@@ -60,16 +60,31 @@ app.use(
 );
 
 const unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const cookieAuthUnsafePaths = new Set(["/api/auth/refresh", "/api/auth/logout"]);
 app.use((req, _res, next) => {
   if (!unsafeMethods.has(req.method)) return next();
   // Allow webhook signature-verified endpoints (no browser cookies required) to be handled by route/controller.
   if (req.path === "/api/payments/paystack/webhook") return next();
 
   const origin = req.get("origin");
-  // Non-browser clients may omit Origin; CORS/cookie behavior and auth checks still apply.
-  if (!origin) return next();
-  if (corsOrigins.includes(origin)) return next();
-  return next(new HttpError(403, "Origin not allowed"));
+  if (origin && !corsOrigins.includes(origin)) {
+    return next(new HttpError(403, "Origin not allowed"));
+  }
+
+  // CSRF hardening for cookie-authenticated unsafe endpoints (refresh/logout rely on HttpOnly refresh cookie).
+  if (cookieAuthUnsafePaths.has(req.path)) {
+    const requestedWith = req.get("x-josstay-request");
+    if (requestedWith !== "1" && !origin) {
+      return next(new HttpError(403, "Cross-site request blocked"));
+    }
+    // Browsers will include Origin for cross-origin requests; require it to be allowed when present.
+    if (!origin && !requestedWith) {
+      return next(new HttpError(403, "Cross-site request blocked"));
+    }
+  }
+
+  // Non-browser clients may omit Origin for other endpoints; auth/validation checks still apply.
+  return next();
 });
 
 

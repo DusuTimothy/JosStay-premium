@@ -2,6 +2,7 @@
 
 import { AMENITIES } from "@josstay/shared";
 import { Icon } from "@/components/ui/Icon";
+import { SearchSelect } from "@/components/shared/SearchSelect";
 
 const RATINGS = [
   { value: 0, label: "Any rating" },
@@ -29,9 +30,6 @@ export const DEFAULT_FILTERS = {
   sort: "recommended",
 };
 
-const selectClass =
-  "w-full appearance-none bg-transparent pr-6 text-[14px] font-semibold text-ink outline-none";
-
 export function FilterPanel({ filters, onChange, onReset, compact = false }) {
   const toggleAmenity = (value) => {
     const current = filters.amenities || [];
@@ -46,9 +44,9 @@ export function FilterPanel({ filters, onChange, onReset, compact = false }) {
     <div>
       <div className="grid divide-y divide-line rounded-xl border border-line bg-white sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-[1.4fr_1fr_1fr_0.9fr]">
         {/* Price */}
-        <div className="px-5 py-4">
+        <div className="px-5 py-4 transition-colors hover:bg-canvas/30">
           <div className="flex items-center justify-between">
-            <span className="text-[12px] text-muted">Price up to</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Price up to</span>
             <span className="text-[13px] font-bold text-ink">
               ₦{Number(filters.maxPrice).toLocaleString("en-NG")}
             </span>
@@ -70,47 +68,35 @@ export function FilterPanel({ filters, onChange, onReset, compact = false }) {
         </div>
 
         {/* Rating */}
-        <div className="px-5 py-4">
-          <span className="block text-[12px] text-muted">Minimum rating</span>
-          <div className="relative mt-1">
-            <select
+        <div className="px-5 py-4 transition-colors hover:bg-canvas/30">
+          <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Minimum rating</span>
+          <div className="mt-1.5">
+            <SearchSelect
+              variant="filter"
+              icon="star"
+              label="Minimum rating"
+              panelTitle="Minimum rating"
+              ariaLabel="Minimum rating"
               value={filters.rating}
-              onChange={(e) => onChange({ rating: Number(e.target.value) })}
-              className={selectClass}
-              aria-label="Minimum rating"
-            >
-              {RATINGS.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-            <Icon
-              name="chevronDown"
-              className="pointer-events-none absolute right-0 top-1.5 h-3.5 w-3.5 text-muted"
+              onChange={(value) => onChange({ rating: Number(value) })}
+              options={RATINGS.map((r) => ({ value: r.value, label: r.label }))}
             />
           </div>
         </div>
 
         {/* Distance */}
-        <div className="px-5 py-4">
-          <span className="block text-[12px] text-muted">From airport</span>
-          <div className="relative mt-1">
-            <select
+        <div className="px-5 py-4 transition-colors hover:bg-canvas/30">
+          <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">From airport</span>
+          <div className="mt-1.5">
+            <SearchSelect
+              variant="filter"
+              icon="pin"
+              label="Distance from airport"
+              panelTitle="Distance from airport"
+              ariaLabel="Distance from airport"
               value={filters.maxDistance}
-              onChange={(e) => onChange({ maxDistance: Number(e.target.value) })}
-              className={selectClass}
-              aria-label="Distance from airport"
-            >
-              {DISTANCES.map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-            <Icon
-              name="chevronDown"
-              className="pointer-events-none absolute right-0 top-1.5 h-3.5 w-3.5 text-muted"
+              onChange={(value) => onChange({ maxDistance: Number(value) })}
+              options={DISTANCES.map((d) => ({ value: d.value, label: d.label }))}
             />
           </div>
         </div>

@@ -10,6 +10,8 @@ import {
   listHostBookings,
   listHostListingBlocks,
   listHostListings,
+  submitHostListingForReview,
+  updateHostListing,
   updateHostListingPricing,
 } from "../store/hostStore.js";
 import { getPayoutRecords } from "../store/payoutStore.js";
@@ -17,6 +19,8 @@ import {
   HostListingBlockSchema,
   HostListingCreateSchema,
   HostListingPricingSchema,
+  HostListingSubmitSchema,
+  HostListingUpdateSchema,
   HostOnboardSchema,
   HostRegisterSchema,
 } from "../validators/hostSchemas.js";
@@ -120,6 +124,28 @@ export const createListing = asyncHandler(async (req, res) => {
     }
   } catch {}
   res.status(201).json(result);
+});
+
+export const updateListing = asyncHandler(async (req, res) => {
+  const payload = HostListingUpdateSchema.parse(req.body || {});
+  const result = await updateHostListing(req.auth, req.params.id, payload);
+  res.json(result);
+});
+
+export const submitListingForReview = asyncHandler(async (req, res) => {
+  HostListingSubmitSchema.parse(req.body || {});
+  const result = await submitHostListingForReview(req.auth, req.params.id);
+  try {
+    const user = await findUserById(req.auth.userId);
+    if (user?.email) {
+      await sendHostListingSubmittedEmail({
+        to: user.email,
+        name: user.name || "Host",
+        listingName: result?.data?.name || "Your listing",
+      });
+    }
+  } catch {}
+  res.json(result);
 });
 
 export const updateListingPricing = asyncHandler(async (req, res) => {

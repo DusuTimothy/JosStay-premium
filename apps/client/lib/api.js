@@ -71,7 +71,8 @@ const shouldSkipAuthRefresh = (path) => {
     normalized.includes("/api/auth/refresh") ||
     normalized.includes("/api/auth/login") ||
     normalized.includes("/api/auth/register") ||
-    normalized.includes("/api/auth/google")
+    normalized.includes("/api/auth/google") ||
+    normalized.includes("/api/auth/logout")
   );
 };
 
@@ -120,6 +121,7 @@ export async function apiRequest(path, options = {}) {
     }
 
     const finalHeaders = new Headers(headers);
+    if (!finalHeaders.has("X-JosStay-Request")) finalHeaders.set("X-JosStay-Request", "1");
     if (activeToken) finalHeaders.set("Authorization", `Bearer ${activeToken}`);
     if (idempotencyKey) finalHeaders.set("Idempotency-Key", idempotencyKey);
 

@@ -36,6 +36,41 @@ const slugify = (value) =>
 
 const toIsoDate = (value) => String(value || "").slice(0, 10);
 
+const toListingResponse = (row) => {
+  const mapped = mapPropertyRow(row);
+  const verificationStatus = row.verification_status || (row.verified ? "verified" : row.is_published ? "verified" : "draft");
+  const status =
+    row.is_published
+      ? "Live"
+      : verificationStatus === "pending_review"
+        ? "In review"
+        : verificationStatus === "rejected"
+          ? "Rejected"
+          : verificationStatus === "suspended"
+            ? "Suspended"
+            : "Draft";
+  return {
+    id: mapped.id,
+    propertyId: mapped.id,
+    slug: mapped.slug,
+    name: mapped.name,
+    type: mapped.type,
+    area: mapped.area,
+    address: mapped.address,
+    description: mapped.description,
+    summary: mapped.summary,
+    price: mapped.price,
+    weekendPrice: row.weekend_price ?? mapped.price,
+    status,
+    verificationStatus,
+    verified: Boolean(mapped.verified),
+    isPublished: Boolean(row.is_published),
+    photoCount: Array.isArray(mapped.images) ? mapped.images.length : 0,
+    images: mapped.images || [],
+    property: { ...mapped, weekendPrice: row.weekend_price ?? mapped.price, verificationStatus, status },
+  };
+};
+
 const requireHost = async (auth) => {
   const host = await findHostByUserId(auth?.userId);
   if (!host) throw new HttpError(403, "Host profile required");
@@ -50,6 +85,54 @@ const getOwnedPropertyRow = async (hostId, propertyId) => {
     [propertyId, hostId],
   );
   return rows[0] || null;
+};
+
+const replaceListingImages = async (client, propertyId, images = []) => {
+  if (!Array.isArray(images)) return;
+  await client.query(`delete from public.property_images where property_id = $1::uuid`, [propertyId]);
+  const normalized = images
+    .filter((img) => img && typeof img.url === "string" && img.url.startsWith("https://"))
+    .slice(0, 30)
+    .map((img, idx) => ({
+      url: img.url,
+      alt: img.alt ? String(img.alt).slice(0, 160) : null,
+      position: Number.isInteger(img.position) ? img.position : idx,
+    }));
+  for (let i = 0; i < normalized.length; i += 1) {
+    const item = normalized[i];
+    await client.query(
+      `insert into public.property_images (property_id, url, alt, position)
+       values ($1::uuid, $2, $3, $4)
+       on conflict (property_id, position) do update set url = excluded.url, alt = excluded.alt`,
+      [propertyId, item.url, item.alt, i],
+    );
+  }
+};
+
+const insertListingDocuments = async (client, hostId, propertyId, documents = []) => {
+  if (!Array.isArray(documents) || !documents.length) return;
+  for (const doc of documents.slice(0, 20)) {
+    if (!doc || !doc.documentType) continue;
+    const metaNoteParts = [];
+    if (doc.publicId) metaNoteParts.push(`publicId:${String(doc.publicId).slice(0, 200)}`);
+    if (doc.notes) metaNoteParts.push(String(doc.notes).slice(0, 700));
+    const notes = metaNoteParts.join(" | ").slice(0, 1000) || null;
+    await client.query(
+      `insert into public.host_verification_documents
+         (host_id, property_id, document_type, file_name, file_url, mime_type, status, notes)
+       values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8)`,
+      [
+        hostId,
+        propertyId,
+        String(doc.documentType),
+        doc.fileName ? String(doc.fileName).slice(0, 200) : (doc.publicId ? String(doc.publicId).slice(0, 200) : null),
+        doc.fileUrl || null,
+        doc.mimeType ? String(doc.mimeType).slice(0, 120) : null,
+        doc.status || "submitted",
+        notes,
+      ],
+    );
+  }
 };
 
 export const findHostByUserId = async (userId) => {
@@ -156,26 +239,7 @@ export const listHostListings = async (auth) => {
        order by p.created_at desc, p.name asc`,
       [host.id],
     );
-    const data = rows.map((row) => {
-      const mapped = mapPropertyRow(row);
-      const verificationStatus = row.verification_status || (row.verified ? "verified" : row.is_published ? "verified" : "draft");
-      const status = row.is_published ? "Live" : verificationStatus === "pending_review" ? "In review" : verificationStatus === "rejected" ? "Rejected" : verificationStatus === "suspended" ? "Suspended" : "Draft";
-      return {
-        id: mapped.id,
-        propertyId: mapped.id,
-        slug: mapped.slug,
-        name: mapped.name,
-        type: mapped.type,
-        area: mapped.area,
-        price: mapped.price,
-        weekendPrice: row.weekend_price ?? mapped.price,
-        status,
-        verificationStatus,
-        verified: Boolean(mapped.verified),
-        photoCount: Array.isArray(mapped.images) ? mapped.images.length : 0,
-        property: { ...mapped, weekendPrice: row.weekend_price ?? mapped.price, verificationStatus },
-      };
-    });
+    const data = rows.map(toListingResponse);
     return { data, sampleData: false };
   } catch {
     throw new HttpError(503, "Host listings are temporarily unavailable");
@@ -291,6 +355,7 @@ export const createHostListing = async (auth, payload) => {
   const client = await getClient();
   try {
     await client.query("begin");
+    const verificationStatus = payload.submitForReview === false ? "draft" : "pending_review";
     const prop = await client.query(
       `insert into public.properties (
          host_id, slug, name, type, area, address, price, weekend_price, cleaning_fee,
@@ -299,10 +364,10 @@ export const createHostListing = async (auth, payload) => {
        ) values (
          $1::uuid, $2, $3, $4, $5, $6, $7::int, $8::int, 0,
          0, 0, false, false, 0, null, 2,
-         $9, $10, $11::text[], false, 'pending_review', now()
+         $9, $10, $11::text[], false, $12, case when $12 = 'pending_review' then now() else null end
        )
        returning *`,
-      [host.id, slug, name, type, area, address, basePrice, weekendPrice, summary, description, ["Valid ID required at check-in"]],
+      [host.id, slug, name, type, area, address, basePrice, weekendPrice, summary, description, ["Valid ID required at check-in"], verificationStatus],
     );
     const propertyId = prop.rows[0].id;
 
@@ -312,41 +377,34 @@ export const createHostListing = async (auth, payload) => {
       [propertyId, basePrice, weekendPrice],
     );
 
-    // Record submitted verification intent metadata (files handled by future upload integration).
-    const photoCount = Math.max(0, Number(payload.photoCount) || 0);
-    const docs = [];
-    if (photoCount > 0) docs.push(['property_photo', `Declared ${photoCount} photo(s)`]);
-    if (payload.hasIdDocument) docs.push(['government_id', String(payload.idDocumentName || 'ID document')]);
-    if (payload.hasOwnershipDocument) docs.push(['proof_of_ownership', String(payload.ownershipDocumentName || 'Ownership document')]);
-    for (const [docType, fileName] of docs) {
-      await client.query(
-        `insert into public.host_verification_documents (host_id, property_id, document_type, file_name, status)
-         values ($1::uuid, $2::uuid, $3, $4, 'submitted')`,
-        [host.id, propertyId, docType, fileName.slice(0, 200)],
-      );
+    if (Array.isArray(payload.images) && payload.images.length) {
+      await replaceListingImages(client, propertyId, payload.images);
+    }
+
+    if (Array.isArray(payload.documents) && payload.documents.length) {
+      await insertListingDocuments(client, host.id, propertyId, payload.documents);
+    } else {
+      // Backward-compatible metadata-only records when client hasn't uploaded files yet.
+      const photoCount = Math.max(0, Number(payload.photoCount) || 0);
+      const docs = [];
+      if (photoCount > 0 && !(Array.isArray(payload.images) && payload.images.length)) {
+        docs.push(["property_photo", `Declared ${photoCount} photo(s)`]);
+      }
+      if (payload.hasIdDocument) docs.push(["government_id", String(payload.idDocumentName || "ID document")]);
+      if (payload.hasOwnershipDocument) docs.push(["proof_of_ownership", String(payload.ownershipDocumentName || "Ownership document")]);
+      for (const [docType, fileName] of docs) {
+        await client.query(
+          `insert into public.host_verification_documents (host_id, property_id, document_type, file_name, status)
+           values ($1::uuid, $2::uuid, $3, $4, 'submitted')`,
+          [host.id, propertyId, docType, fileName.slice(0, 200)],
+        );
+      }
     }
 
     await client.query("commit");
 
     const row = await getOwnedPropertyRow(host.id, propertyId);
-    const mapped = mapPropertyRow(row);
-    return {
-      data: {
-        id: mapped.id,
-        slug: mapped.slug,
-        name: mapped.name,
-        type: mapped.type,
-        area: mapped.area,
-        price: mapped.price,
-        weekendPrice: row.weekend_price ?? mapped.price,
-        status: "In review",
-        verificationStatus: "pending_review",
-        verified: false,
-        photoCount: Array.isArray(mapped.images) ? mapped.images.length : 0,
-        property: mapped,
-      },
-      sampleData: false,
-    };
+    return { data: toListingResponse(row), sampleData: false };
   } catch (error) {
     try { await client.query("rollback"); } catch {}
     if (error instanceof HttpError) throw error;
@@ -354,6 +412,107 @@ export const createHostListing = async (auth, payload) => {
   } finally {
     client.release();
   }
+};
+
+export const updateHostListing = async (auth, listingId, payload) => {
+  if (!isDatabaseEnabled) {
+    throw new HttpError(503, "Host listing service is unavailable in sample mode");
+  }
+  const { host, row: existing } = await assertListingOwnership(auth, listingId);
+
+  const updates = [];
+  const values = [listingId, host.id];
+  const push = (fragment, value) => {
+    values.push(value);
+    updates.push(`${fragment} $${values.length}`);
+  };
+
+  if (payload.name != null) push("name =", String(payload.name).trim());
+  if (payload.type != null) push("type =", String(payload.type).trim().toLowerCase());
+  if (payload.area != null) push("area =", String(payload.area).trim());
+  if (payload.address != null) push("address =", String(payload.address).trim());
+  if (payload.description != null) {
+    const desc = String(payload.description).trim();
+    push("description =", desc || "Host listing");
+    push("summary =", (desc || String(existing.summary || "Host listing")).slice(0, 220));
+  }
+  if (payload.price != null) {
+    const base = Math.max(5000, Math.round(Number(payload.price) || 0));
+    push("price =", base);
+  }
+  if (payload.weekendPrice != null) {
+    const weekend = Math.max(0, Math.round(Number(payload.weekendPrice) || 0));
+    push("weekend_price =", weekend);
+  }
+
+  const client = await getClient();
+  try {
+    await client.query("begin");
+
+    if (updates.length) {
+      await client.query(
+        `update public.properties
+         set ${updates.join(", ")}, updated_at = now()
+         where id = $1::uuid and host_id = $2::uuid`,
+        values,
+      );
+      // Keep primary room roughly in sync if base/weekend prices were changed.
+      if (payload.price != null || payload.weekendPrice != null) {
+        const nextBase = payload.price != null ? Math.max(5000, Math.round(Number(payload.price) || 0)) : Number(existing.price || 0);
+        const nextWeekend = payload.weekendPrice != null ? Math.max(nextBase, Math.round(Number(payload.weekendPrice) || nextBase)) : Math.max(nextBase, Number(existing.weekend_price || nextBase));
+        await client.query(
+          `update public.rooms
+           set price = case when code = 'standard' then $2::int else price end,
+               weekend_price = case when code = 'standard' then $3::int else coalesce(weekend_price, price) end,
+               updated_at = now()
+           where property_id = $1::uuid`,
+          [listingId, nextBase, nextWeekend],
+        );
+      }
+    }
+
+    if (Array.isArray(payload.images)) {
+      await replaceListingImages(client, listingId, payload.images);
+    }
+    if (Array.isArray(payload.documents) && payload.documents.length) {
+      await insertListingDocuments(client, host.id, listingId, payload.documents);
+    }
+
+    await client.query("commit");
+  } catch (error) {
+    try { await client.query("rollback"); } catch {}
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(503, "Could not update listing");
+  } finally {
+    client.release();
+  }
+
+  const row = await getOwnedPropertyRow(host.id, listingId);
+  if (!row) throw new HttpError(404, "Listing not found");
+  return { data: toListingResponse(row), sampleData: false };
+};
+
+export const submitHostListingForReview = async (auth, listingId) => {
+  if (!isDatabaseEnabled) {
+    throw new HttpError(503, "Host listing service is unavailable in sample mode");
+  }
+  const { host } = await assertListingOwnership(auth, listingId);
+
+  await query(
+    `update public.properties
+     set verification_status = case
+           when is_published then verification_status
+           else 'pending_review'
+         end,
+         submitted_for_verification_at = case when is_published then submitted_for_verification_at else now() end,
+         updated_at = now()
+     where id = $1::uuid and host_id = $2::uuid`,
+    [listingId, host.id],
+  );
+
+  const row = await getOwnedPropertyRow(host.id, listingId);
+  if (!row) throw new HttpError(404, "Listing not found");
+  return { data: toListingResponse(row), sampleData: false };
 };
 
 export const updateHostListingPricing = async (auth, listingId, payload) => {

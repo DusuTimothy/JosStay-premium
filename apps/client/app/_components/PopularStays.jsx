@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { properties as fallbackProperties } from "@josstay/shared";
 import { PropertyCard } from "@/components/shared/PropertyCard";
 import { SkeletonCard } from "@/components/shared/states";
 import { Icon } from "@/components/ui/Icon";
@@ -14,7 +13,7 @@ const selectPopular = (list) =>
     .slice(0, 3);
 
 export function PopularStays() {
-  const [properties, setProperties] = useState(() => selectPopular(fallbackProperties));
+  const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,9 +23,9 @@ export function PopularStays() {
         const res = await api.get("/api/properties", { cache: "no-store" });
         const data = Array.isArray(res?.data) ? res.data : [];
         if (!active) return;
-        if (data.length) setProperties(selectPopular(data));
+        setProperties(selectPopular(data));
       } catch {
-        // Keep fallback content if API is unavailable.
+        if (active) setProperties([]);
       } finally {
         if (active) setLoading(false);
       }
@@ -55,19 +54,17 @@ export function PopularStays() {
         </Link>
       </div>
 
-      <div className="mt-8 grid gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
-        {loading && popular.length === 0 ? (
-          <>
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </>
-        ) : (
-          popular.map((property) => (
+      {loading && popular.length === 0 ? (
+        <div className="mt-8 grid gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+          <SkeletonCard /><SkeletonCard /><SkeletonCard />
+        </div>
+      ) : popular.length === 0 ? null : (
+        <div className="mt-8 grid gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+          {popular.map((property) => (
             <PropertyCard key={property.slug || property.id} property={property} />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

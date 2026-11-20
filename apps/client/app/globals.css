@@ -46,7 +46,19 @@ body {
     @apply border-plum-700 bg-plum-700 text-white hover:border-plum-700 hover:text-white;
   }
   .field {
-    @apply w-full rounded-lg border border-line bg-white px-3.5 py-3 text-sm text-ink outline-none transition placeholder:text-muted/70 focus:border-plum-500 focus:ring-2 focus:ring-plum-100;
+    @apply w-full rounded-lg border border-line bg-white px-3.5 py-3 text-sm text-ink outline-none transition placeholder:text-muted/70 hover:border-plum-200 focus:border-plum-500 focus:ring-2 focus:ring-plum-100/70 focus:ring-offset-0;
+  }
+  select.field {
+    @apply cursor-pointer appearance-none bg-no-repeat pr-10;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236E6A76' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-position: right 0.85rem center;
+    background-size: 1rem 1rem;
+  }
+  select.field:hover {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236B3FA0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+  select.field:focus {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%234E2971' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
   .label {
     @apply mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted;

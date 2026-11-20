@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { addDays, formatDate, formatNaira, toIso } from "@josstay/shared";
 import { CalendarPicker } from "@/components/shared/CalendarPicker";
+import { SearchSelect } from "@/components/shared/SearchSelect";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
@@ -207,19 +208,37 @@ export function BundleView() {
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <label className="block">
                 <span className="label">Flying from</span>
-                <select value={origin?.id || ""} onChange={(e) => setOriginId(e.target.value)} className="field">
-                  {origins.map((o) => (
-                    <option key={o.id} value={o.id}>{o.city} — {o.id}</option>
-                  ))}
-                </select>
+                <SearchSelect
+                  variant="form"
+                  icon="plane"
+                  label="Flying from"
+                  panelTitle="Flying from"
+                  ariaLabel="Flying from"
+                  placeholder="Select origin"
+                  value={origin?.id || ""}
+                  onChange={setOriginId}
+                  options={origins.map((o) => ({
+                    value: o.id,
+                    label: `${o.city} — ${o.id}`,
+                    hint: o.fare ? `${format(o.fare)} / passenger` : undefined,
+                  }))}
+                />
               </label>
               <label className="block">
                 <span className="label">Passengers</span>
-                <select value={passengers} onChange={(e) => setPassengers(Number(e.target.value))} className="field">
-                  {[1, 2, 3, 4, 5, 6].map((n) => (
-                    <option key={n} value={n}>{n} passenger{n === 1 ? "" : "s"}</option>
-                  ))}
-                </select>
+                <SearchSelect
+                  variant="form"
+                  icon="users"
+                  label="Passengers"
+                  panelTitle="Passengers"
+                  ariaLabel="Passengers"
+                  value={passengers}
+                  onChange={(value) => setPassengers(Number(value))}
+                  options={[1, 2, 3, 4, 5, 6].map((n) => ({
+                    value: n,
+                    label: `${n} passenger${n === 1 ? "" : "s"}`,
+                  }))}
+                />
               </label>
             </div>
 
@@ -257,11 +276,21 @@ export function BundleView() {
 
             <label className="mt-5 block">
               <span className="label">Property</span>
-              <select value={property.slug} onChange={(e) => setPropertySlug(e.target.value)} className="field">
-                {properties.map((p) => (
-                  <option key={p.slug} value={p.slug}>{p.name} · {p.area} · {formatNaira(p.price)}/night</option>
-                ))}
-              </select>
+              <SearchSelect
+                variant="form"
+                icon="home"
+                label="Property"
+                panelTitle="Choose a stay"
+                ariaLabel="Property"
+                placeholder="Select property"
+                value={property.slug}
+                onChange={setPropertySlug}
+                options={properties.map((p) => ({
+                  value: p.slug,
+                  label: p.name,
+                  hint: `${p.area} · ${formatNaira(p.price)}/night`,
+                }))}
+              />
             </label>
 
             <div className="mt-4 grid gap-2 sm:grid-cols-2">

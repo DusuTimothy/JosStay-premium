@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { PasswordField } from "@/components/ui/PasswordField";
+import { SearchSelect } from "@/components/shared/SearchSelect";
 import { useAuth, useCurrency, useToast } from "@/components/providers";
 import { api } from "@/lib/api";
 
@@ -205,15 +206,29 @@ export function HostView() {
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
                   <span className="label">Property type</span>
-                  <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))} className="field">
-                    {PROPERTY_TYPES.map((t) => (<option key={t.id} value={t.id}>{t.label}</option>))}
-                  </select>
+                  <SearchSelect
+                    variant="form"
+                    icon="home"
+                    label="Property type"
+                    panelTitle="Property type"
+                    ariaLabel="Property type"
+                    value={form.type}
+                    onChange={(value) => setForm((f) => ({ ...f, type: value }))}
+                    options={PROPERTY_TYPES.map((t) => ({ value: t.id, label: t.label }))}
+                  />
                 </label>
                 <label className="block">
                   <span className="label">Area</span>
-                  <select value={form.area} onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))} className="field">
-                    {AREAS.map((area) => (<option key={area} value={area}>{area}</option>))}
-                  </select>
+                  <SearchSelect
+                    variant="form"
+                    icon="pin"
+                    label="Area"
+                    panelTitle="Area"
+                    ariaLabel="Area"
+                    value={form.area}
+                    onChange={(value) => setForm((f) => ({ ...f, area: value }))}
+                    options={AREAS.map((area) => ({ value: area, label: area }))}
+                  />
                 </label>
               </div>
 

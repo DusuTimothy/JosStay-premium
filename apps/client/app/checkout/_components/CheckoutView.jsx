@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { formatDate, getProperty, quoteStay, typeLabel } from "@josstay/shared";
+import { formatDate, quoteStay, typeLabel } from "@josstay/shared";
 import { PriceSummary } from "@/components/shared/PriceSummary";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -83,10 +83,8 @@ export function CheckoutView() {
         setProperty(res?.data || null);
       } catch (error) {
         if (!active) return;
-        // Fallback to bundled data for resilience in demo/local environments.
-        const fallback = getProperty(draft.propertySlug);
-        if (fallback) setProperty(fallback);
-        else setPropertyError(error?.message || "Could not load property details");
+        setProperty(null);
+        setPropertyError(error?.message || "Could not load property details");
       } finally {
         if (active) setPropertyLoading(false);
       }

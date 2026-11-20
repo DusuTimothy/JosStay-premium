@@ -17,6 +17,7 @@ import { useAuth, useCurrency, useToast } from "@/components/providers";
 import { api } from "@/lib/api";
 import { SUPPORT_WHATSAPP_URL } from "@/lib/contact";
 import { EmptyState, LoadingResults } from "@/components/shared/states";
+import { SearchSelect } from "@/components/shared/SearchSelect";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: "dashboard" },
@@ -90,7 +91,9 @@ function Dashboard() {
   const [dashboard, setDashboard] = useState(null);
   const [payouts, setPayouts] = useState({ data: [], totals: null, sampleData: true });
   const [showForm, setShowForm] = useState(false);
+  const [editingListingId, setEditingListingId] = useState("");
   const [submittingListing, setSubmittingListing] = useState(false);
+  const [submittingListingAction, setSubmittingListingAction] = useState("");
   const [savingPricing, setSavingPricing] = useState(false);
   const [blocksLoading, setBlocksLoading] = useState(false);
   const [blockMutatingDate, setBlockMutatingDate] = useState("");
@@ -303,59 +306,245 @@ function Dashboard() {
   const upcomingBookingsCount = dashboard?.stats?.upcomingBookings ?? hostBookings.filter((b) => b.status === "Confirmed" || b.status === "Pending").length;
   const occupancyRate = dashboard?.stats?.occupancyRate ?? 0;
 
+  const resetListingForm = () => {
+    setListingForm({ name: "", type: "apartment", area: "Rayfield", price: "", description: "", declaration: false });
+    setPhotos([]);
+    setIdDoc(null);
+    setOwnershipDoc(null);
+    setErrors({});
+    setEditingListingId("");
+  };
+
+  const openCreateListingForm = () => {
+    resetListingForm();
+    setShowForm(true);
+    setTab("listings");
+  };
+
+  const openEditListingForm = (listing) => {
+    if (!listing) return;
+    const listingId = String(listing.id || listing.propertyId || "");
+    setEditingListingId(listingId);
+    setListingForm({
+      name: listing.name || "",
+      type: listing.type || "apartment",
+      area: listing.area || "Rayfield",
+      price: String(Number(listing.price) || ""),
+      description: listing.description || listing.summary || "",
+      declaration: false,
+    });
+    setPhotos([]);
+    setIdDoc(null);
+    setOwnershipDoc(null);
+    setErrors({});
+    setShowForm(true);
+    setTab("listings");
+  };
+
+  const closeListingForm = () => {
+    setShowForm(false);
+    resetListingForm();
+  };
+
+  const uploadListingAssets = async ({ requireConfigured = true } = {}) => {
+    const hasFiles = photos.length > 0 || Boolean(idDoc) || Boolean(ownershipDoc);
+    if (!hasFiles) return { images: undefined, documents: undefined };
+
+    const requestCloudinarySignature = async (params) => {
+      const res = await api.post("/api/uploads/cloudinary/signature", params);
+      if (!res?.data) throw new Error("Upload signature unavailable");
+      return res.data;
+    };
+
+    const uploadFileToCloudinary = async (file, { folder, resourceType = "image", tags } = {}) => {
+      const sig = await requestCloudinarySignature({ folder, resourceType, tags });
+      const form = new FormData();
+      form.append("file", file);
+      form.append("api_key", sig.apiKey);
+      form.append("timestamp", String(sig.timestamp));
+      form.append("signature", sig.signature);
+      if (sig.folder) form.append("folder", sig.folder);
+      if (sig.publicId) form.append("public_id", sig.publicId);
+
+      const endpoint = sig.uploadUrl || `https://api.cloudinary.com/v1_1/${sig.cloudName}/${resourceType || "image"}/upload`;
+      const response = await fetch(endpoint, { method: "POST", body: form });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(json?.error?.message || "File upload failed");
+      }
+      return {
+        url: json.secure_url || json.url,
+        publicId: json.public_id,
+        resourceType: json.resource_type || resourceType,
+        format: json.format,
+        bytes: json.bytes,
+        originalFilename: json.original_filename || file.name,
+      };
+    };
+
+    try {
+      const uploadConfig = await api.get("/api/uploads/config", { cache: "no-store" }).catch(() => null);
+      const cloudinaryConfigured = Boolean(uploadConfig?.data?.cloudinary?.configured);
+      if (!cloudinaryConfigured) {
+        if (requireConfigured) throw new Error("Upload service is not configured");
+        return { images: undefined, documents: undefined };
+      }
+
+      const listingFolderBase = "josstay/hosts/listings";
+      const uploadedImages = [];
+      for (let i = 0; i < photos.length; i += 1) {
+        const file = photos[i];
+        const uploaded = await uploadFileToCloudinary(file, {
+          folder: `${listingFolderBase}/photos`,
+          resourceType: "image",
+          tags: "josstay,host,listing,photo",
+        });
+        if (uploaded?.url) {
+          uploadedImages.push({
+            url: uploaded.url,
+            alt: `${listingForm.name || "Listing"} photo ${i + 1}`,
+            publicId: uploaded.publicId,
+            resourceType: uploaded.resourceType,
+          });
+        }
+      }
+
+      const docUploads = [];
+      if (idDoc) docUploads.push({ file: idDoc, documentType: "government_id", resourceType: idDoc.type === "application/pdf" ? "raw" : "image" });
+      if (ownershipDoc) docUploads.push({ file: ownershipDoc, documentType: "proof_of_ownership", resourceType: ownershipDoc.type === "application/pdf" ? "raw" : "image" });
+
+      const uploadedDocuments = [];
+      for (const item of docUploads) {
+        const uploaded = await uploadFileToCloudinary(item.file, {
+          folder: `${listingFolderBase}/documents`,
+          resourceType: item.resourceType,
+          tags: `josstay,host,verification,${item.documentType}`,
+        });
+        if (uploaded?.url) {
+          uploadedDocuments.push({
+            documentType: item.documentType,
+            fileName: item.file.name,
+            fileUrl: uploaded.url,
+            mimeType: item.file.type || undefined,
+            publicId: uploaded.publicId,
+            status: "submitted",
+          });
+        }
+      }
+
+      return {
+        images: uploadedImages.length ? uploadedImages : undefined,
+        documents: uploadedDocuments.length ? uploadedDocuments : undefined,
+      };
+    } catch (uploadError) {
+      const message = uploadError?.message || "Could not upload files";
+      if (/not configured/i.test(message) || uploadError?.status === 503) {
+        throw new Error("File uploads are not configured yet. Configure Cloudinary to upload listing photos and verification documents.");
+      }
+      throw uploadError;
+    }
+  };
+
+  const submitListingForReview = async (listingId) => {
+    if (!listingId || isSample) {
+      toast(isSample ? "Live host data is required to submit listings for review." : "Listing not found.", "info");
+      return;
+    }
+    setSubmittingListing(true);
+    setSubmittingListingAction(`submit:${listingId}`);
+    try {
+      await api.post(`/api/host/listings/${listingId}/submit`, {});
+      toast("Listing submitted for review.", "success");
+      await refreshHostData({ silent: true });
+    } catch (error) {
+      toast(error?.message || "Could not submit listing for review", "error");
+    } finally {
+      setSubmittingListing(false);
+      setSubmittingListingAction("");
+    }
+  };
+
   const submitListing = async (e) => {
     e.preventDefault();
     if (submittingListing) return;
+
+    const isEditing = Boolean(editingListingId);
     const next = {};
     if (!listingForm.name.trim()) next.name = "Give your listing a name";
     if (!listingForm.price || Number(listingForm.price) < 5000) next.price = "Set a nightly price of at least ₦5,000";
-    if (photos.length < 3) next.photos = "Upload at least 3 photos";
-    if (!idDoc) next.idDoc = "Add a government-issued ID";
-    if (!ownershipDoc) next.ownershipDoc = "Add proof of ownership or a letter of authority";
-    if (!listingForm.declaration) next.declaration = "Please confirm the declaration";
+
+    if (!isEditing) {
+      if (photos.length < 3) next.photos = "Upload at least 3 photos";
+      if (!idDoc) next.idDoc = "Add a government-issued ID";
+      if (!ownershipDoc) next.ownershipDoc = "Add proof of ownership or a letter of authority";
+      if (!listingForm.declaration) next.declaration = "Please confirm the declaration";
+    } else {
+      if (!listingForm.declaration) next.declaration = "Please confirm the declaration before submitting changes";
+    }
+
     setErrors(next);
     if (Object.keys(next).length) return;
 
     if (isSample) {
-      toast("Host data is in sample mode. Connect the host API/database to submit listings.", "info");
+      toast("Host data is in sample mode. Connect the host API/database to manage listings.", "info");
       return;
     }
 
     setSubmittingListing(true);
+    setSubmittingListingAction(isEditing ? `save:${editingListingId}` : "create");
     try {
-      const payload = {
-        name: listingForm.name.trim(),
-        type: listingForm.type,
-        area: listingForm.area,
-        price: Math.round(Number(listingForm.price)),
-        description: listingForm.description?.trim() || undefined,
-        photoCount: photos.length,
-        hasIdDocument: Boolean(idDoc),
-        hasOwnershipDocument: Boolean(ownershipDoc),
-        idDocumentName: idDoc?.name || undefined,
-        ownershipDocumentName: ownershipDoc?.name || undefined,
-        declaration: Boolean(listingForm.declaration),
-      };
-      const res = await api.post("/api/host/listings", payload);
-      toast("Listing submitted for review.", "success");
-      setShowForm(false);
-      setListingForm({ name: "", type: "apartment", area: "Rayfield", price: "", description: "", declaration: false });
-      setPhotos([]);
-      setIdDoc(null);
-      setOwnershipDoc(null);
-      setErrors({});
+      const shouldRequireUploads = !isEditing || photos.length > 0 || Boolean(idDoc) || Boolean(ownershipDoc);
+      const uploaded = await uploadListingAssets({ requireConfigured: shouldRequireUploads });
+
+      if (isEditing) {
+        const payload = {
+          name: listingForm.name.trim(),
+          type: listingForm.type,
+          area: listingForm.area,
+          price: Math.round(Number(listingForm.price)),
+          description: listingForm.description?.trim() || undefined,
+          ...(uploaded.images ? { images: uploaded.images } : {}),
+          ...(uploaded.documents ? { documents: uploaded.documents } : {}),
+        };
+        await api.patch(`/api/host/listings/${editingListingId}`, payload);
+        toast(uploaded.images || uploaded.documents ? "Listing updated and files saved." : "Listing updated.", "success");
+      } else {
+        const payload = {
+          name: listingForm.name.trim(),
+          type: listingForm.type,
+          area: listingForm.area,
+          price: Math.round(Number(listingForm.price)),
+          description: listingForm.description?.trim() || undefined,
+          declaration: Boolean(listingForm.declaration),
+          ...(uploaded.images ? { images: uploaded.images, photoCount: uploaded.images.length } : { photoCount: photos.length }),
+          ...(uploaded.documents
+            ? { documents: uploaded.documents }
+            : {
+                hasIdDocument: Boolean(idDoc),
+                hasOwnershipDocument: Boolean(ownershipDoc),
+                idDocumentName: idDoc?.name || undefined,
+                ownershipDocumentName: ownershipDoc?.name || undefined,
+              }),
+        };
+
+        const res = await api.post("/api/host/listings", payload);
+        toast(uploaded.images || uploaded.documents ? "Listing and files submitted for review." : "Listing submitted for review.", "success");
+        const createdId = res?.data?.id || res?.data?.propertyId;
+        if (createdId) setSelectedListingId(String(createdId));
+      }
+
+      closeListingForm();
       await refreshHostData({ silent: true });
-      const createdId = res?.data?.id || res?.data?.propertyId;
-      if (createdId) setSelectedListingId(String(createdId));
       setTab("listings");
     } catch (error) {
       if (error?.status === 503 || error?.code === "NETWORK_ERROR" || error?.code === "REQUEST_ABORTED") {
-        toast("Host listing service is unavailable right now. Please try again when live host services are available.", "error");
+        toast(error?.message || "Host listing service is unavailable right now. Please try again when live host services are available.", "error");
       } else {
-        toast(error?.message || "Could not submit listing", "error");
+        toast(error?.message || (isEditing ? "Could not update listing" : "Could not submit listing"), "error");
       }
     } finally {
       setSubmittingListing(false);
+      setSubmittingListingAction("");
     }
   };
 
@@ -485,7 +674,7 @@ function Dashboard() {
         </div>
         <div className="flex items-center gap-2">
           <Link href="/" className="hidden items-center gap-1.5 rounded-xl border border-line bg-white px-3 py-2.5 text-xs font-semibold text-ink hover:border-plum-200 sm:inline-flex"><Icon name="logout" className="h-4 w-4" /> Guest view</Link>
-          <Button size="sm" icon="plus" onClick={() => { setShowForm(true); setTab("listings"); }}>Add listing</Button>
+          <Button size="sm" icon="plus" onClick={openCreateListingForm}>Add listing</Button>
         </div>
       </div>
 
@@ -572,13 +761,13 @@ function Dashboard() {
               <h2 className="font-display text-[22px] font-bold tracking-tight text-ink">Your listings</h2>
               <p className="text-xs text-muted">Listings are loaded from your host account. New submissions are sent for review through the host API when available.</p>
             </div>
-            <Button size="sm" variant="secondary" icon="plus" onClick={() => setShowForm((s) => !s)}>{showForm ? "Close form" : "Add listing"}</Button>
+            <Button size="sm" variant="secondary" icon="plus" onClick={() => (showForm ? closeListingForm() : openCreateListingForm())}>{showForm ? "Close form" : "Add listing"}</Button>
           </div>
 
           {showForm && (
             <form onSubmit={submitListing} className="rounded-xl border border-line bg-white p-4 sm:p-5">
-              <h3 className="font-display text-[19px] font-bold tracking-tight text-ink">Add a new listing</h3>
-              <p className="mt-0.5 text-xs text-muted">Submit listing details for review. Photo/document file uploads are recorded as verification metadata for now and will be fully uploaded in the Cloudinary integration step.</p>
+              <h3 className="font-display text-[19px] font-bold tracking-tight text-ink">{editingListingId ? "Edit listing" : "Add a new listing"}</h3>
+              <p className="mt-0.5 text-xs text-muted">{editingListingId ? "Update listing details and upload new photos or documents if needed. Replaced photo uploads overwrite the current gallery when provided." : "Submit listing details for review. Photos and documents are uploaded when Cloudinary is configured; otherwise you can still submit listing details for verification."}</p>
 
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label className="block sm:col-span-2">
@@ -589,16 +778,30 @@ function Dashboard() {
 
                 <label className="block">
                   <span className="label">Property type</span>
-                  <select value={listingForm.type} onChange={(e) => setListingForm((f) => ({ ...f, type: e.target.value }))} className="field">
-                    {PROPERTY_TYPES.map((t) => (<option key={t.id} value={t.id}>{t.label}</option>))}
-                  </select>
+                  <SearchSelect
+                    variant="form"
+                    icon="home"
+                    label="Property type"
+                    panelTitle="Property type"
+                    ariaLabel="Property type"
+                    value={listingForm.type}
+                    onChange={(value) => setListingForm((f) => ({ ...f, type: value }))}
+                    options={PROPERTY_TYPES.map((t) => ({ value: t.id, label: t.label }))}
+                  />
                 </label>
 
                 <label className="block">
                   <span className="label">Area</span>
-                  <select value={listingForm.area} onChange={(e) => setListingForm((f) => ({ ...f, area: e.target.value }))} className="field">
-                    {AREAS.map((area) => (<option key={area} value={area}>{area}</option>))}
-                  </select>
+                  <SearchSelect
+                    variant="form"
+                    icon="pin"
+                    label="Area"
+                    panelTitle="Area"
+                    ariaLabel="Area"
+                    value={listingForm.area}
+                    onChange={(value) => setListingForm((f) => ({ ...f, area: value }))}
+                    options={AREAS.map((area) => ({ value: area, label: area }))}
+                  />
                 </label>
 
                 <label className="block">
@@ -608,10 +811,10 @@ function Dashboard() {
                 </label>
 
                 <div className="min-w-0">
-                  <span className="label">Photo upload</span>
+                  <span className="label">{editingListingId ? "Replace photos (optional)" : "Photo upload"}</span>
                   <label className="flex min-w-0 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-line bg-canvas/60 px-3 py-3 text-xs text-muted hover:border-plum-300">
                     <Icon name="upload" className="h-4 w-4 shrink-0 text-plum-600" />
-                    <span className="min-w-0 truncate">{photos.length ? `${photos.length} photos selected` : "Choose at least 3 photos"}</span>
+                    <span className="min-w-0 truncate">{photos.length ? `${photos.length} photo${photos.length === 1 ? "" : "s"} selected` : (editingListingId ? "Choose new photos to replace the current gallery" : "Choose at least 3 photos")}</span>
                     <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { setPhotos(Array.from(e.target.files || [])); setErrors((er) => ({ ...er, photos: undefined })); }} />
                   </label>
                   {errors.photos && <span className="mt-1 block text-[11px] text-red-600">{errors.photos}</span>}
@@ -625,7 +828,7 @@ function Dashboard() {
                 </div>
 
                 <div className="min-w-0">
-                  <span className="label">Verification · government ID</span>
+                  <span className="label">{editingListingId ? "Add verification · government ID (optional)" : "Verification · government ID"}</span>
                   <label className="flex min-w-0 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-line bg-canvas/60 px-3 py-3 text-xs text-muted hover:border-plum-300">
                     <Icon name="shield" className="h-4 w-4 shrink-0 text-plum-600" />
                     <span className="min-w-0 truncate">{idDoc ? idDoc.name : "Passport, NIN or driver's licence"}</span>
@@ -635,7 +838,7 @@ function Dashboard() {
                 </div>
 
                 <div className="min-w-0">
-                  <span className="label">Verification · ownership</span>
+                  <span className="label">{editingListingId ? "Add verification · ownership (optional)" : "Verification · ownership"}</span>
                   <label className="flex min-w-0 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-line bg-canvas/60 px-3 py-3 text-xs text-muted hover:border-plum-300">
                     <Icon name="home" className="h-4 w-4 shrink-0 text-plum-600" />
                     <span className="min-w-0 truncate">{ownershipDoc ? ownershipDoc.name : "Proof of ownership or authority"}</span>
@@ -646,12 +849,15 @@ function Dashboard() {
 
                 <label className="flex cursor-pointer items-start gap-2.5 sm:col-span-2">
                   <input type="checkbox" checked={listingForm.declaration} onChange={(e) => { setListingForm((f) => ({ ...f, declaration: e.target.checked })); setErrors((er) => ({ ...er, declaration: undefined })); }} className="mt-0.5 h-4 w-4 accent-plum-600" />
-                  <span className="text-[11px] leading-relaxed text-muted">I confirm this is my property or that I have authority to list it, and the information provided is accurate.</span>
+                  <span className="text-[11px] leading-relaxed text-muted">{editingListingId ? "I confirm the updated information is accurate and I am authorized to manage this listing." : "I confirm this is my property or that I have authority to list it, and the information provided is accurate."}</span>
                 </label>
                 {errors.declaration && <span className="text-[11px] text-red-600 sm:col-span-2">{errors.declaration}</span>}
 
                 <div className="sm:col-span-2">
-                  <Button type="submit" full size="lg" icon="check" loading={submittingListing} disabled={submittingListing}>Submit listing for verification</Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" size="lg" onClick={closeListingForm} disabled={submittingListing}>Cancel</Button>
+                    <Button type="submit" size="lg" icon="check" loading={submittingListing} disabled={submittingListing}>{editingListingId ? "Save changes" : "Submit listing for verification"}</Button>
+                  </div>
                 </div>
               </div>
             </form>
@@ -681,6 +887,20 @@ function Dashboard() {
                       <Badge tone={listing.status === "Live" ? "verified" : listing.status === "Rejected" || listing.status === "Suspended" ? "neutral" : "gold"}>{listing.status || (listing.verified ? "Live" : "In review")}</Badge>
                       {listing.slug ? (
                         <Button size="sm" variant="secondary" onClick={() => router.push(`/property/${listing.slug}`)}>View</Button>
+                      ) : null}
+                      {isLikelyUuid(listing.id || listing.propertyId) && !isSample ? (
+                        <Button size="sm" variant="secondary" onClick={() => openEditListingForm(listing)}>Edit</Button>
+                      ) : null}
+                      {(listing.verificationStatus === "draft" || listing.verificationStatus === "rejected" || listing.status === "Draft" || listing.status === "Rejected") && isLikelyUuid(listing.id || listing.propertyId) && !isSample ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={submittingListing && submittingListingAction === `submit:${String(listing.id || listing.propertyId || "")}`}
+                          disabled={submittingListing}
+                          onClick={() => submitListingForReview(String(listing.id || listing.propertyId || ""))}
+                        >
+                          {listing.status === "Rejected" || listing.verificationStatus === "rejected" ? "Resubmit" : "Submit"}
+                        </Button>
                       ) : null}
                       <Button size="sm" variant="secondary" onClick={() => { setSelectedListingId(String(listing.id || listing.propertyId || "")); setTab("calendar"); }}>Manage</Button>
                     </div>
@@ -716,16 +936,23 @@ function Dashboard() {
             {listings.length > 0 && (
               <label className="mt-4 block">
                 <span className="label">Listing</span>
-                <select
+                <SearchSelect
+                  variant="form"
+                  icon="home"
+                  label="Listing"
+                  panelTitle="Select listing"
+                  ariaLabel="Listing"
                   value={String(selectedListing?.id || selectedListing?.propertyId || "")}
-                  onChange={(e) => setSelectedListingId(e.target.value)}
-                  className="field"
-                >
-                  {listings.map((listing) => {
+                  onChange={setSelectedListingId}
+                  options={listings.map((listing) => {
                     const id = String(listing.id || listing.propertyId || listing.slug || listing.name);
-                    return <option key={id} value={id}>{listing.name}</option>;
+                    return {
+                      value: id,
+                      label: listing.name || "Listing",
+                      hint: [listing.area, listing.status].filter(Boolean).join(" · ") || undefined,
+                    };
                   })}
-                </select>
+                />
               </label>
             )}
 

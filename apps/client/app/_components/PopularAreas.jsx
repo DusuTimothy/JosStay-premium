@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AREAS as fallbackAreas, properties as fallbackProperties } from "@josstay/shared";
 import { Icon } from "@/components/ui/Icon";
 import { api } from "@/lib/api";
 
@@ -36,7 +35,8 @@ const fallbackMeta = {
 };
 
 export function PopularAreas() {
-  const [properties, setProperties] = useState(Array.isArray(fallbackProperties) ? fallbackProperties : []);
+  const [properties, setProperties] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
@@ -47,7 +47,9 @@ export function PopularAreas() {
         if (!active) return;
         if (data.length) setProperties(data);
       } catch {
-        // Keep fallback content if API is unavailable.
+        if (active) setProperties([]);
+      } finally {
+        if (active) setLoading(false);
       }
     })();
     return () => {
@@ -56,13 +58,16 @@ export function PopularAreas() {
   }, []);
 
   const areas = useMemo(() => {
-    const known = Array.isArray(fallbackAreas) ? fallbackAreas : [];
-    const discovered = [...new Set((properties || []).map((p) => p?.area).filter(Boolean))];
-    const merged = [...known];
-    for (const area of discovered) {
-      if (!merged.includes(area)) merged.push(area);
+    const counts = new Map();
+    for (const p of properties || []) {
+      const area = String(p?.area || "").trim();
+      if (!area) continue;
+      counts.set(area, (counts.get(area) || 0) + 1);
     }
-    return merged.slice(0, 4);
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 4)
+      .map(([area]) => area);
   }, [properties]);
 
   return (
@@ -72,6 +77,11 @@ export function PopularAreas() {
         Popular areas in Jos
       </h2>
 
+      {loading && areas.length === 0 ? (
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (<div key={i} className="aspect-[4/3] animate-pulse rounded-lg bg-plum-100/40 lg:aspect-[4/3.4]" />))}
+        </div>
+      ) : areas.length === 0 ? null : (
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {areas.map((area) => {
           const count = (properties || []).filter((p) => p.area === area).length;
@@ -108,6 +118,7 @@ export function PopularAreas() {
           );
         })}
       </div>
+      )}
     </section>
   );
 }

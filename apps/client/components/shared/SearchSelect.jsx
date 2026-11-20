@@ -19,6 +19,8 @@ export function SearchSelect({
   className = "",
 }) {
   const isInline = variant === "inline";
+  const isForm = variant === "form";
+  const isFilter = variant === "filter";
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [position, setPosition] = useState(null);
@@ -53,15 +55,15 @@ export function SearchSelect({
       const trigger = triggerRef.current;
       if (!trigger) return;
       const rect = trigger.getBoundingClientRect();
-      const width = Math.min(Math.max(rect.width, 248), window.innerWidth - 24);
+      const width = Math.min(Math.max(rect.width, 264), window.innerWidth - 24);
       const left = Math.min(Math.max(rect.left, 12), window.innerWidth - width - 12);
       const below = window.innerHeight - rect.bottom - 16;
       const above = rect.top - 16;
-      const openUp = below < 280 && above > below;
-      const maxHeight = Math.min(320, Math.max(160, openUp ? above : below));
+      const openUp = below < 300 && above > below;
+      const maxHeight = Math.min(360, Math.max(180, openUp ? above : below));
       setPosition({
         left,
-        top: openUp ? Math.max(12, rect.top - Math.min(maxHeight, 320) - 8) : rect.bottom + 8,
+        top: openUp ? Math.max(12, rect.top - Math.min(maxHeight, 360) - 10) : rect.bottom + 10,
         width,
         maxHeight,
       });
@@ -138,7 +140,7 @@ export function SearchSelect({
       role="listbox"
       aria-label={label}
       tabIndex={-1}
-      className="outline-none"
+      className="flex flex-col gap-0.5 p-1.5 outline-none"
     >
       {options.map((option, index) => {
         const isSelected = index === selectedIndex;
@@ -151,25 +153,32 @@ export function SearchSelect({
             aria-selected={isSelected}
             onClick={() => selectOption(option)}
             onMouseEnter={() => setActiveIndex(index)}
-            className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left transition ${
-              isActive ? "bg-plum-50" : "bg-transparent"
-            } ${isSelected ? "font-semibold text-plum-800" : "font-medium text-ink"}`}
+            className={`group/opt flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all duration-150 ${
+              isActive ? "bg-plum-50/80" : "bg-transparent hover:bg-canvas/70"
+            } ${isSelected ? "bg-plum-50 text-plum-900" : "text-ink"}`}
           >
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[14px]">{option.label}</span>
+              <span className={`block truncate text-[13.5px] leading-snug ${isSelected ? "font-semibold" : "font-medium"}`}>
+                {option.label}
+              </span>
               {option.hint ? (
-                <span className="mt-0.5 block text-[11px] font-normal text-muted">
+                <span className={`mt-0.5 block text-[11px] leading-snug ${isSelected ? "text-plum-600/80" : "text-muted"}`}>
                   {option.hint}
                 </span>
               ) : null}
             </span>
-            {isSelected ? (
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-plum-700 text-white">
-                <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.6} />
-              </span>
-            ) : (
-              <span className="h-6 w-6 shrink-0 rounded-full border border-line" />
-            )}
+            <span
+              className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border transition-all duration-150 ${
+                isSelected
+                  ? "border-plum-700 bg-plum-700 text-white shadow-[0_2px_6px_rgba(78,41,113,.25)]"
+                  : isActive
+                    ? "border-plum-200 bg-white"
+                    : "border-line bg-white"
+              }`}
+              aria-hidden="true"
+            >
+              {isSelected ? <Icon name="check" className="h-3 w-3" strokeWidth={3} /> : null}
+            </span>
           </button>
         );
       })}
@@ -177,13 +186,17 @@ export function SearchSelect({
   );
 
   const panelHeader = (
-    <div className="flex items-center justify-between gap-3 px-3 pb-1.5 pt-1">
-      <span className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-plum-700">
-        <Icon name={icon || "sliders"} className="h-3.5 w-3.5" />
-        {panelTitle || label}
+    <div className="flex items-center justify-between gap-3 border-b border-line/70 bg-gradient-to-b from-white to-canvas/30 px-3.5 pb-2.5 pt-3">
+      <span className="inline-flex items-center gap-2">
+        <span className="grid h-6 w-6 place-items-center rounded-lg bg-plum-50 text-plum-700 ring-1 ring-inset ring-plum-100">
+          <Icon name={icon || "sliders"} className="h-3.5 w-3.5" />
+        </span>
+        <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-ink/80">
+          {panelTitle || label}
+        </span>
       </span>
-      <span className="text-[10px] font-medium text-muted">
-        {options.length} option{options.length === 1 ? "" : "s"}
+      <span className="rounded-full bg-canvas px-2 py-0.5 text-[10px] font-semibold text-muted ring-1 ring-inset ring-line/60">
+        {options.length}
       </span>
     </div>
   );
@@ -191,7 +204,11 @@ export function SearchSelect({
   return (
     <div
       className={
-        isInline ? `relative inline-flex ${className}` : `relative h-full bg-white ${className}`
+        isInline
+          ? `relative inline-flex ${className}`
+          : isForm || isFilter
+            ? `relative w-full ${className}`
+            : `relative h-full bg-white ${className}`
       }
     >
       <button
@@ -204,52 +221,86 @@ export function SearchSelect({
         aria-label={ariaLabel || label}
         className={
           isInline
-            ? `inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-[13px] font-semibold shadow-[0_1px_2px_rgba(28,18,42,.04)] outline-none transition focus-visible:ring-2 focus-visible:ring-plum-200 ${
+            ? `inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-[13px] font-semibold shadow-[0_1px_2px_rgba(28,18,42,.04)] outline-none transition-all duration-150 focus-visible:ring-2 focus-visible:ring-plum-300/40 focus-visible:ring-offset-1 ${
                 open
-                  ? "border-plum-400 bg-plum-50 text-plum-800"
-                  : "border-line bg-white text-ink hover:border-plum-300 hover:shadow-sm"
+                  ? "border-plum-300 bg-plum-50 text-plum-900 shadow-[0_0_0_3px_rgba(107,63,160,.08)]"
+                  : "border-line bg-white text-ink hover:-translate-y-px hover:border-plum-200 hover:shadow-sm active:translate-y-0"
               }`
-            : `group flex h-full w-full items-center gap-3 px-4 py-3 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-plum-300 lg:px-5 ${
-                open ? "bg-plum-50/60" : "bg-white"
-              }`
+            : isForm
+              ? `group flex w-full items-center justify-between gap-3 rounded-lg border bg-white px-3.5 py-3 text-left text-sm text-ink shadow-[0_1px_0_rgba(28,18,42,.02)] outline-none transition-all duration-150 focus-visible:ring-2 focus-visible:ring-plum-100/70 ${
+                  open
+                    ? "border-plum-500 ring-2 ring-plum-100/70"
+                    : "border-line hover:border-plum-200 hover:bg-canvas/20"
+                }`
+            : isFilter
+              ? `group flex w-full items-center justify-between gap-2 rounded-lg px-0 py-1 text-left outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-plum-200/60 ${
+                  open ? "text-plum-800" : "text-ink"
+                }`
+              : `group flex h-full w-full items-center gap-3 px-4 py-3 text-left outline-none transition-all duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-plum-300/50 lg:px-5 ${
+                  open ? "bg-plum-50/50" : "bg-white hover:bg-canvas/40"
+                }`
         }
       >
         {isInline ? (
           <>
-            <Icon
-              name={icon || "sliders"}
-              className={`h-4 w-4 transition ${open ? "text-plum-700" : "text-plum-600"}`}
-            />
-            <span className="font-medium text-muted">{label}</span>
-            <span className="h-3.5 w-px bg-line" aria-hidden="true" />
-            <span className="max-w-[160px] truncate text-ink">
+            <span className={`grid h-6 w-6 place-items-center rounded-full transition-colors ${open ? "bg-plum-100 text-plum-700" : "bg-canvas text-plum-600"}`}>
+              <Icon name={icon || "sliders"} className="h-3.5 w-3.5" />
+            </span>
+            <span className="text-[12px] font-medium text-muted">{label}</span>
+            <span className="max-w-[170px] truncate text-[13px] text-ink">
               {selected?.label ?? placeholder}
             </span>
             <Icon
               name="chevronDown"
-              className={`h-3.5 w-3.5 shrink-0 transition ${
-                open ? "rotate-180 text-plum-700" : "text-muted"
+              className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${
+                open ? "rotate-180 text-plum-700" : "text-muted/80"
               }`}
             />
           </>
+        ) : isForm ? (
+          <>
+            <span className={`min-w-0 flex-1 truncate ${selected ? "font-medium text-ink" : "text-muted/80"}`}>
+              {selected?.label ?? placeholder}
+            </span>
+            <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-md transition-colors ${open ? "bg-plum-50 text-plum-700" : "text-muted group-hover:bg-canvas group-hover:text-plum-600"}`}>
+              <Icon
+                name="chevronDown"
+                className={`h-4 w-4 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+              />
+            </span>
+          </>
+        ) : isFilter ? (
+          <>
+            <span className={`min-w-0 flex-1 truncate text-[14px] font-semibold tracking-[-0.01em] ${selected ? "text-ink" : "text-muted"}`}>
+              {selected?.label ?? placeholder}
+            </span>
+            <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full transition-all duration-150 ${open ? "bg-plum-50 text-plum-700" : "text-muted group-hover:bg-plum-50/70 group-hover:text-plum-700"}`}>
+              <Icon
+                name="chevronDown"
+                className={`h-3.5 w-3.5 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+              />
+            </span>
+          </>
         ) : (
           <>
-            <Icon
-              name={icon || "search"}
-              className={`h-5 w-5 shrink-0 transition ${open ? "text-plum-700" : "text-plum-600"}`}
-            />
+            <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors duration-150 ${open ? "bg-plum-100 text-plum-700" : "bg-plum-50/70 text-plum-600 group-hover:bg-plum-100/80"}`}>
+              <Icon
+                name={icon || "search"}
+                className="h-[18px] w-[18px]"
+              />
+            </span>
             <span className="min-w-0 flex-1">
               <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
                 {label}
               </span>
               <span className="mt-0.5 flex items-center justify-between gap-2">
-                <span className="truncate text-[15px] font-semibold text-ink">
+                <span className="truncate text-[15px] font-semibold tracking-[-0.01em] text-ink">
                   {selected?.label ?? placeholder}
                 </span>
                 <Icon
                   name="chevronDown"
-                  className={`h-4 w-4 shrink-0 transition ${
-                    open ? "rotate-180 text-plum-700" : "text-muted group-hover:text-plum-600"
+                  className={`h-4 w-4 shrink-0 transition-transform duration-200 ${
+                    open ? "rotate-180 text-plum-700" : "text-muted/70 group-hover:text-plum-600"
                   }`}
                 />
               </span>
@@ -264,29 +315,31 @@ export function SearchSelect({
               <div className="fixed inset-0 z-[95] sm:hidden">
                 <button
                   type="button"
-                  className="absolute inset-0 animate-fade-in bg-ink/45 backdrop-blur-[2px]"
+                  className="absolute inset-0 animate-fade-in bg-ink/50 backdrop-blur-[3px]"
                   aria-label={`Close ${label}`}
                   onClick={close}
                 />
                 <div
                   ref={panelRef}
-                  className="absolute inset-x-0 bottom-0 max-h-[82vh] overflow-hidden rounded-t-3xl bg-white shadow-[0_-24px_60px_-20px_rgba(28,18,42,.45)] animate-slide-up"
+                  className="absolute inset-x-0 bottom-0 flex max-h-[82vh] flex-col overflow-hidden rounded-t-[1.75rem] border-t border-white/60 bg-white shadow-[0_-30px_80px_-24px_rgba(28,18,42,.5)] animate-slide-up"
                 >
                   <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-line" />
-                  <div className="flex items-center justify-between gap-3 px-5 pb-1 pt-3">
+                  <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-3">
                     <div>
                       <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-plum-700">
-                        <Icon name={icon || "sliders"} className="h-3.5 w-3.5" />
+                        <span className="grid h-6 w-6 place-items-center rounded-lg bg-plum-50 text-plum-700 ring-1 ring-inset ring-plum-100">
+                          <Icon name={icon || "sliders"} className="h-3.5 w-3.5" />
+                        </span>
                         {panelTitle || label}
                       </p>
                       <p className="mt-1 text-[12px] text-muted">
-                        Tap an option to continue
+                        Choose an option below
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={close}
-                      className="grid h-9 w-9 place-items-center rounded-full border border-line text-ink"
+                      className="grid h-9 w-9 place-items-center rounded-full border border-line bg-white text-ink shadow-sm transition hover:bg-canvas"
                       aria-label="Close"
                     >
                       <Icon name="x" className="h-4 w-4" />
@@ -307,10 +360,12 @@ export function SearchSelect({
                   width: position?.width ?? 260,
                   maxHeight: position?.maxHeight ?? 320,
                 }}
-                className="z-[95] overflow-auto rounded-2xl border border-line bg-white p-1.5 shadow-[0_28px_70px_-24px_rgba(28,18,42,.45)] animate-fade-in"
+                className="z-[95] flex flex-col overflow-hidden rounded-2xl border border-line/80 bg-white shadow-[0_30px_80px_-28px_rgba(28,18,42,.45)] ring-1 ring-black/[0.02] animate-fade-in"
               >
                 {panelHeader}
-                {optionList}
+                <div className="min-h-0 flex-1 overflow-auto">
+                  {optionList}
+                </div>
               </div>
             ),
             document.body,
