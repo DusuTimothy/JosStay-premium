@@ -8,6 +8,7 @@ import { Badge, VerifiedBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useBooking, useCurrency, useToast } from "@/components/providers";
+import { supportWhatsAppUrl } from "@/lib/contact";
 import { EmptyState, SkeletonCard } from "@/components/shared/states";
 
 export function ConfirmationView() {
@@ -193,7 +194,7 @@ export function ConfirmationView() {
         </ol>
         <div className="mt-4 flex items-center gap-2 border-t border-line pt-4">
           <Icon name="whatsapp" className="h-4 w-4 text-emerald-600" />
-          <a href="https://wa.me/2348000000000" target="_blank" rel="noreferrer" className="text-[12px] font-semibold text-emerald-700 underline underline-offset-4">Chat with support on WhatsApp</a>
+          <a href={supportWhatsAppUrl()} target="_blank" rel="noreferrer" className="text-[12px] font-semibold text-emerald-700 underline underline-offset-4">Chat with support on WhatsApp</a>
         </div>
       </div>
 

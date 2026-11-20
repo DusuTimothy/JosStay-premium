@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/providers";
+import { SUPPORT_PHONE_DISPLAY, SUPPORT_TEL_URL, supportWhatsAppUrl } from "@/lib/contact";
 
 const CATEGORIES = ["All", "Booking", "Payments", "Cancellation", "Hosting", "Safety"];
 
@@ -140,8 +141,8 @@ export function HelpView() {
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-600 text-white"><Icon name="whatsapp" className="h-5 w-5" /></span>
             <h2 className="mt-3 text-base font-bold text-emerald-900">Chat with us on WhatsApp</h2>
             <p className="mt-1 text-xs leading-relaxed text-emerald-800/80">Fastest way to reach a human. Available 8:00 AM – 10:00 PM WAT, with 24/7 cover for urgent stay issues.</p>
-            <a href="https://wa.me/2348000000000?text=Hi%20JosStay%2C%20I%20need%20help%20with%20my%20booking." target="_blank" rel="noreferrer" className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-700"><Icon name="whatsapp" className="h-4 w-4" />Start WhatsApp chat</a>
-            <p className="mt-2 text-center text-[10px] text-emerald-800/60">Demo number · replace with your WhatsApp Business line</p>
+            <a href={supportWhatsAppUrl("Hi JosStay, I need help with my booking.")} target="_blank" rel="noreferrer" className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-700"><Icon name="whatsapp" className="h-4 w-4" />Start WhatsApp chat</a>
+            <p className="mt-2 text-center text-[10px] text-emerald-800/60">Configured via NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER</p>
           </div>
 
           <div className="rounded-xl border border-line bg-white p-5">
@@ -151,9 +152,9 @@ export function HelpView() {
                 <Icon name="mail" className="mt-0.5 h-4 w-4 text-plum-600" />
                 <span><span className="block text-xs font-semibold text-ink">Email support</span><span className="block text-[11px] text-muted">support@josstay.demo</span></span>
               </button>
-              <a href="tel:+2348000000000" className="flex items-start gap-2.5">
+              <a href={SUPPORT_TEL_URL} className="flex items-start gap-2.5">
                 <Icon name="phone" className="mt-0.5 h-4 w-4 text-plum-600" />
-                <span><span className="block text-xs font-semibold text-ink">Call us</span><span className="block text-[11px] text-muted">+234 800 000 0000</span></span>
+                <span><span className="block text-xs font-semibold text-ink">Call us</span><span className="block text-[11px] text-muted">{SUPPORT_PHONE_DISPLAY}</span></span>
               </a>
               <Link href="/bookings" className="flex items-start gap-2.5">
                 <Icon name="calendar" className="mt-0.5 h-4 w-4 text-plum-600" />
