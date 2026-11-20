@@ -9,7 +9,7 @@ import { Icon } from "@/components/ui/Icon";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { useCurrency, useToast } from "@/components/providers";
 
-const SIGNUP_MIN_PASSWORD_LENGTH = 12;
+const SIGNUP_MIN_PASSWORD_LENGTH = 8;
 
 const benefits = [
   { icon: "wallet", title: "Earn from every night", text: "Set your own prices and get paid securely through Paystack after each stay." },

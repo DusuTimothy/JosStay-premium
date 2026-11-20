@@ -9,7 +9,7 @@ const email = z
 
 const password = z
   .string()
-  .min(12, "Password must be at least 12 characters")
+  .min(8, "Password must be at least 8 characters")
   .max(72, "Password must be 72 characters or fewer");
 
 export const RegisterSchema = z

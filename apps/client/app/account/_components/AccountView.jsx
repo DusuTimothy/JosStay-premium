@@ -8,7 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { useBooking, useToast } from "@/components/providers";
 
-const SIGNUP_MIN_PASSWORD_LENGTH = 12;
+const SIGNUP_MIN_PASSWORD_LENGTH = 8;
 
 const shortcuts = [
   { href: "/bookings", icon: "calendar", title: "My bookings", text: "View, cancel or rebook a stay in Jos." },

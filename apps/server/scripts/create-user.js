@@ -17,8 +17,8 @@ if (!email || !name) {
   console.error("Set USER_EMAIL and USER_NAME.");
   process.exit(1);
 }
-if (password.length < 12 || password.length > 72) {
-  console.error("USER_PASSWORD must be 12–72 characters.");
+if (password.length < 8 || password.length > 72) {
+  console.error("USER_PASSWORD must be 8–72 characters.");
   process.exit(1);
 }
 if (!["guest", "host", "admin"].includes(role)) {
