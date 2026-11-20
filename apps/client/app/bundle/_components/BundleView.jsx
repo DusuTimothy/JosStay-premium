@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   addDays,
   formatDate,
   formatNaira,
-  properties,
+  properties as fallbackProperties,
   quoteStay,
   toIso,
 } from "@josstay/shared";
@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { useBooking, useCurrency, useToast } from "@/components/providers";
+import { api } from "@/lib/api";
+import { LoadingResults } from "@/components/shared/states";
 
 const today = toIso(new Date());
 
@@ -25,12 +27,17 @@ const ORIGINS = [
   { id: "PHC", city: "Port Harcourt", airport: "Omagwa (PHC)", fare: 95000 },
 ];
 
+const pickProperty = (list, slug) =>
+  (Array.isArray(list) ? list : []).find((p) => p?.slug === slug) || (Array.isArray(list) ? list[0] : null);
+
 export function BundleView() {
   const router = useRouter();
   const { setDraft } = useBooking();
   const { toast } = useToast();
   const { format } = useCurrency();
 
+  const [properties, setProperties] = useState(Array.isArray(fallbackProperties) ? fallbackProperties : []);
+  const [loadingProperties, setLoadingProperties] = useState(true);
   const [originId, setOriginId] = useState("LOS");
   const [propertySlug, setPropertySlug] = useState("crestview-boutique-hotel");
   const [checkIn, setCheckIn] = useState(addDays(today, 7));
@@ -39,33 +46,59 @@ export function BundleView() {
   const [dateOpen, setDateOpen] = useState(false);
 
   useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await api.get("/api/properties", { cache: "no-store" });
+        const data = Array.isArray(res?.data) ? res.data : [];
+        if (!active) return;
+        if (data.length) {
+          setProperties(data);
+          setPropertySlug((current) => (data.some((p) => p.slug === current) ? current : data[0].slug));
+        }
+      } catch {
+        // Keep fallback properties when API is unavailable.
+      } finally {
+        if (active) setLoadingProperties(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     document.body.style.overflow = dateOpen ? "hidden" : "";
     return () => {
       document.body.style.overflow = "";
     };
   }, [dateOpen]);
 
-  const origin = ORIGINS.find((o) => o.id === originId);
-  const property = properties.find((p) => p.slug === propertySlug) || properties[0];
-  const quote = quoteStay(property, checkIn, checkOut, {
-    roomId: property.rooms[0].id,
-    bundleDiscount: true,
-  });
+  const origin = ORIGINS.find((o) => o.id === originId) || ORIGINS[0];
+  const property = useMemo(() => pickProperty(properties, propertySlug), [properties, propertySlug]);
+  const room = property?.rooms?.[0] || null;
+  const quote = property && room
+    ? quoteStay(property, checkIn, checkOut, { roomId: room.id, bundleDiscount: true })
+    : null;
   const flightTotal = origin.fare * passengers;
-  const total = flightTotal + quote.total;
-  const savings = quote.discount;
+  const total = quote ? flightTotal + quote.total : flightTotal;
+  const savings = quote?.discount || 0;
 
   const reserve = () => {
+    if (!property || !room || !quote) {
+      toast("Stay details are not available yet. Please try again.", "error");
+      return;
+    }
     if (!checkIn || !checkOut) {
       toast("Choose your travel dates first", "error");
       return;
     }
     setDraft({
       propertySlug: property.slug,
-      roomId: property.rooms[0].id,
+      roomId: room.id,
       checkIn,
       checkOut,
-      guests: Math.min(passengers, property.maxGuests),
+      guests: Math.min(passengers, property.maxGuests || passengers),
       airportPickup: false,
       bundle: true,
       bundleFlight: {
@@ -78,6 +111,28 @@ export function BundleView() {
     });
     router.push("/checkout");
   };
+
+  if (loadingProperties && !property) {
+    return (
+      <div className="container-page pb-16 pt-8">
+        <LoadingResults count={2} />
+      </div>
+    );
+  }
+
+  if (!property || !room || !quote) {
+    return (
+      <div className="container-page pb-16 pt-8">
+        <div className="rounded-xl border border-line bg-white p-6">
+          <h1 className="font-display text-[24px] font-bold text-ink">Bundle unavailable</h1>
+          <p className="mt-2 text-sm text-muted">We couldn&apos;t load stay options for this bundle right now. Please try again.</p>
+          <div className="mt-4">
+            <Button onClick={() => window.location.reload()}>Retry</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container-page pb-16 pt-6 sm:pt-9">
@@ -156,7 +211,7 @@ export function BundleView() {
 
             <label className="mt-5 block">
               <span className="label">Property</span>
-              <select value={propertySlug} onChange={(e) => setPropertySlug(e.target.value)} className="field">
+              <select value={property.slug} onChange={(e) => setPropertySlug(e.target.value)} className="field">
                 {properties.map((p) => (
                   <option key={p.slug} value={p.slug}>{p.name} · {p.area} · {formatNaira(p.price)}/night</option>
                 ))}
@@ -175,18 +230,22 @@ export function BundleView() {
             </div>
 
             <div className="mt-4 flex items-center gap-3 rounded-lg border border-line p-3">
-              <img src={property.images[0]} alt={property.name} className="h-16 w-20 shrink-0 rounded-md object-cover" />
+              {property.images?.[0] ? (
+                <img src={property.images[0]} alt={property.name} className="h-16 w-20 shrink-0 rounded-md object-cover" />
+              ) : (
+                <div className="h-16 w-20 shrink-0 rounded-md bg-canvas" />
+              )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13.5px] font-semibold text-ink">{property.name}</p>
                 <p className="text-[11px] text-muted">{property.area} · {quote.room.name} · {quote.nights} night{quote.nights === 1 ? "" : "s"}</p>
-                <p className="mt-0.5 text-[11px] font-medium text-emerald-700">Verified · free cancellation</p>
+                <p className="mt-0.5 text-[11px] font-medium text-emerald-700">{property.verified ? "Verified" : "Listing"}{property.freeCancellation ? " · free cancellation" : ""}</p>
               </div>
               <p className="shrink-0 text-[13px] font-bold text-ink">{format(property.price)}<span className="text-[10px] font-normal text-muted"> /night</span></p>
             </div>
           </section>
 
           <div className="rounded-lg bg-cream p-4 text-[11.5px] leading-relaxed text-ink/75">
-            <strong className="font-semibold text-ink">How the bundle works:</strong> your flight and stay are reserved together. The 10% discount applies to the stay portion and appears as a line item at checkout. Demo fares and payments only.
+            <strong className="font-semibold text-ink">How the bundle works:</strong> your flight and stay are reserved together. The 10% discount applies to the stay portion and appears as a line item at checkout.
           </div>
         </div>
 
