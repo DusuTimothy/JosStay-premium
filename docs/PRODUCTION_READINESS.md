@@ -2,7 +2,7 @@
 
 Step-by-step checklist for taking **JosStay Premium** from demo/prototype to a live production deployment on **Vercel (client)** + **Render (API)** + **Aiven PostgreSQL/Redis** with a focus on **security, low latency, idempotency, and interactivity**.
 
-> **Status note (repo reality):** the client currently has no backend API fetch layer, relies on bundled/sample data (`@josstay/shared`, `packages/shared/data.js`) and local/demo flows, and several UI/server paths still contain demo behavior. Use this document as the implementation and release checklist to replace those gaps.
+> **Status note (repo reality):** significant production-path work is now implemented in-repo (API-backed auth/session/booking/host flows, Postgres-backed stores/migrations, Paystack initialize/verify/webhook handling with idempotency primitives, host listing/pricing/block APIs, bundle/quote/config APIs, upload-signature scaffolding, and Brevo/Cloudinary env-driven service hooks), but the app is **not yet production-complete**. Several live-path demo/sample fallbacks and `@josstay/shared` demo-data dependencies remain in client flows, end-to-end provider/infra validation is pending, and production deployment hardening must be verified against real Aiven/Render/Vercel/Paystack/Brevo/Cloudinary/Google configuration. Use this document as the implementation and release checklist to close remaining gaps.
 
 ---
 
@@ -46,6 +46,7 @@ Step-by-step checklist for taking **JosStay Premium** from demo/prototype to a l
 ### 0.5 Production-like validation gate
 - [ ] Migrations applied, `db:verify` passing, API healthy, client loads against live API, and CORS/auth preflight succeeds from the deployed frontend.
 - [ ] No demo seed data relied on for live operation (`apps/server/scripts/seed.js` is sample/dev-oriented unless intentionally replaced).
+- [ ] Local/dev validation can be run using `.env.example` values adapted for local Postgres (e.g. `DATA_BACKEND=postgres`, local `DATABASE_URL`, strong `JWT_SECRET`), with provider keys omitted for safe non-production behavior where supported. Document any required overrides.
 
 ---
 
@@ -62,6 +63,7 @@ Step-by-step checklist for taking **JosStay Premium** from demo/prototype to a l
 - [ ] Keep/verify Zod validation on all inputs (`apps/server/src/validators/*`) and reject unknown/invalid payloads.
 - [ ] Keep/tune rate limiting for API and auth (`apps/server/src/middleware/rateLimit.js`, env limits). For multi-instance Render, move limiter/idempotency state to Redis or a shared store.
 - [ ] Ensure `TRUST_PROXY` is correct so rate limits and logs use real client IPs.
+- [ ] Keep/verify unsafe-method Origin checks and cookie/session handling for browser flows; review CSRF/session edge cases (cross-origin refresh/logout, concurrent refresh rotation, multi-tab behavior) before go-live.
 
 ### 1.3 Authentication and authorization
 - [ ] Keep bcrypt hashing and signed JWT verification (`apps/server/src/lib/tokens.js`, `apps/server/src/middleware/auth.js`, auth routes/controllers); enforce server-side registration/login rules.
@@ -74,6 +76,7 @@ Step-by-step checklist for taking **JosStay Premium** from demo/prototype to a l
 - [ ] Verify webhook signatures, authenticate webhook sources, and process events idempotently (see Phase 3).
 - [ ] Validate and constrain uploads (type, size, filename/content checks), store in secure object storage/CDN, and authorize access to private documents.
 - [ ] Log security-relevant events (auth failures, permission denials, payment/booking state changes) without PII/secrets; add alerting/monitoring.
+- **Implemented in code (verify in production):** Paystack server-side initialize/verify/webhook routes, signature verification, amount/reference checks, idempotency-key handling for booking/payment-init paths, webhook event dedupe storage, booking/payment state reconciliation helpers, Cloudinary server-side upload signature/config endpoints, and Brevo transactional email service hooks (safe no-op when unconfigured). Live provider credentials, webhook delivery, signed browser uploads, and end-to-end notification delivery still require configuration and validation.
 
 ### 1.5 Dependency and code hygiene
 - [ ] Run dependency audit/update process; pin/review critical packages.

@@ -2,14 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  addDays,
-  formatDate,
-  formatNaira,
-  properties as fallbackProperties,
-  quoteStay,
-  toIso,
-} from "@josstay/shared";
+import { addDays, formatDate, formatNaira, toIso } from "@josstay/shared";
 import { CalendarPicker } from "@/components/shared/CalendarPicker";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -20,7 +13,7 @@ import { LoadingResults } from "@/components/shared/states";
 
 const today = toIso(new Date());
 
-const ORIGINS = [
+const DEFAULT_ORIGINS = [
   { id: "LOS", city: "Lagos", airport: "Murtala Muhammed (LOS)", fare: 78000 },
   { id: "ABV", city: "Abuja", airport: "Nnamdi Azikiwe (ABV)", fare: 52000 },
   { id: "KAN", city: "Kano", airport: "Mallam Aminu Kano (KAN)", fare: 60000 },
@@ -36,28 +29,45 @@ export function BundleView() {
   const { toast } = useToast();
   const { format } = useCurrency();
 
-  const [properties, setProperties] = useState(Array.isArray(fallbackProperties) ? fallbackProperties : []);
+  const [origins, setOrigins] = useState(DEFAULT_ORIGINS);
+  const [properties, setProperties] = useState([]);
   const [loadingProperties, setLoadingProperties] = useState(true);
   const [originId, setOriginId] = useState("LOS");
-  const [propertySlug, setPropertySlug] = useState("crestview-boutique-hotel");
+  const [propertySlug, setPropertySlug] = useState("");
   const [checkIn, setCheckIn] = useState(addDays(today, 7));
   const [checkOut, setCheckOut] = useState(addDays(today, 9));
   const [passengers, setPassengers] = useState(2);
   const [dateOpen, setDateOpen] = useState(false);
+  const [quoteData, setQuoteData] = useState(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const res = await api.get("/api/properties", { cache: "no-store" });
-        const data = Array.isArray(res?.data) ? res.data : [];
+        const [configRes, propsRes] = await Promise.allSettled([
+          api.get("/api/bundle/config", { cache: "no-store" }),
+          api.get("/api/properties", { cache: "no-store" }),
+        ]);
+
         if (!active) return;
-        if (data.length) {
+
+        if (configRes.status === "fulfilled") {
+          const cfg = configRes.value?.data || configRes.value || {};
+          const cfgOrigins = Array.isArray(cfg.origins) && cfg.origins.length ? cfg.origins : DEFAULT_ORIGINS;
+          setOrigins(cfgOrigins);
+          setOriginId((current) => (cfgOrigins.some((o) => o.id === current) ? current : cfgOrigins[0]?.id || "LOS"));
+        }
+
+        if (propsRes.status === "fulfilled") {
+          const data = Array.isArray(propsRes.value?.data) ? propsRes.value.data : [];
           setProperties(data);
-          setPropertySlug((current) => (data.some((p) => p.slug === current) ? current : data[0].slug));
+          setPropertySlug((current) => (data.some((p) => p.slug === current) ? current : data[0]?.slug || ""));
+        } else {
+          setProperties([]);
         }
       } catch {
-        // Keep fallback properties when API is unavailable.
+        // Leave empty state; user can retry.
       } finally {
         if (active) setLoadingProperties(false);
       }
@@ -74,19 +84,55 @@ export function BundleView() {
     };
   }, [dateOpen]);
 
-  const origin = ORIGINS.find((o) => o.id === originId) || ORIGINS[0];
+  const origin = origins.find((o) => o.id === originId) || origins[0];
   const property = useMemo(() => pickProperty(properties, propertySlug), [properties, propertySlug]);
   const room = property?.rooms?.[0] || null;
-  const quote = property && room
-    ? quoteStay(property, checkIn, checkOut, { roomId: room.id, bundleDiscount: true })
-    : null;
-  const flightTotal = origin.fare * passengers;
-  const total = quote ? flightTotal + quote.total : flightTotal;
-  const savings = quote?.discount || 0;
+
+  useEffect(() => {
+    let active = true;
+    if (!property?.slug || !origin?.id || !checkIn || !checkOut) {
+      setQuoteData(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    setQuoteLoading(true);
+    (async () => {
+      try {
+        const res = await api.post("/api/bundle/quote", {
+          propertySlug: property.slug,
+          originId: origin.id,
+          checkIn,
+          checkOut,
+          ...(room?.id ? { roomId: room.id } : {}),
+          guests: Math.min(passengers, property.maxGuests || passengers),
+          passengers,
+          airportPickup: false,
+        }, { cache: "no-store" });
+        if (!active) return;
+        setQuoteData(res?.data || null);
+      } catch {
+        if (!active) return;
+        setQuoteData(null);
+      } finally {
+        if (active) setQuoteLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [property?.slug, property?.maxGuests, room?.id, origin?.id, checkIn, checkOut, passengers]);
+
+  const quote = quoteData?.quote || null;
+  const flightTotal = quoteData?.flight?.total ?? (origin ? origin.fare * passengers : 0);
+  const total = quoteData?.totals?.total ?? (quote ? flightTotal + quote.total : flightTotal);
+  const savings = quoteData?.totals?.savings ?? quote?.discount ?? 0;
 
   const reserve = () => {
-    if (!property || !room || !quote) {
-      toast("Stay details are not available yet. Please try again.", "error");
+    if (!property || !room || !quote || !origin) {
+      toast("Bundle details are not ready yet. Please try again.", "error");
       return;
     }
     if (!checkIn || !checkOut) {
@@ -95,7 +141,7 @@ export function BundleView() {
     }
     setDraft({
       propertySlug: property.slug,
-      roomId: room.id,
+      roomId: room.id || room.code,
       checkIn,
       checkOut,
       guests: Math.min(passengers, property.maxGuests || passengers),
@@ -112,7 +158,7 @@ export function BundleView() {
     router.push("/checkout");
   };
 
-  if (loadingProperties && !property) {
+  if (loadingProperties && properties.length === 0) {
     return (
       <div className="container-page pb-16 pt-8">
         <LoadingResults count={2} />
@@ -120,7 +166,7 @@ export function BundleView() {
     );
   }
 
-  if (!property || !room || !quote) {
+  if (!property || !room) {
     return (
       <div className="container-page pb-16 pt-8">
         <div className="rounded-xl border border-line bg-white p-6">
@@ -137,7 +183,7 @@ export function BundleView() {
   return (
     <div className="container-page pb-16 pt-6 sm:pt-9">
       <div className="max-w-2xl">
-        <Badge tone="gold" icon="sparkles">Save 10% on your stay</Badge>
+        <Badge tone="gold" icon="sparkles">Save on your stay</Badge>
         <span className="eyebrow mt-5 block">Optional travel extra</span>
         <h1 className="mt-4 font-display text-[36px] font-bold leading-[1.02] tracking-tightest text-ink sm:text-[50px]">
           Flight + stay,<br className="hidden sm:block" /> bundled.
@@ -154,15 +200,15 @@ export function BundleView() {
               <span className="grid h-8 w-8 place-items-center rounded-full bg-plum-50 text-plum-700"><Icon name="plane" className="h-4 w-4" /></span>
               <div>
                 <h2 className="font-display text-[18px] font-bold tracking-tight text-ink">Your flight</h2>
-                <p className="text-[11.5px] text-muted">Sample fares · return · economy · one bag included.</p>
+                <p className="text-[11.5px] text-muted">Indicative fares · return · economy.</p>
               </div>
             </div>
 
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <label className="block">
                 <span className="label">Flying from</span>
-                <select value={originId} onChange={(e) => setOriginId(e.target.value)} className="field">
-                  {ORIGINS.map((o) => (
+                <select value={origin?.id || ""} onChange={(e) => setOriginId(e.target.value)} className="field">
+                  {origins.map((o) => (
                     <option key={o.id} value={o.id}>{o.city} — {o.id}</option>
                   ))}
                 </select>
@@ -180,8 +226,8 @@ export function BundleView() {
             <div className="mt-4 rounded-lg border border-line bg-canvas p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-center">
-                  <p className="font-display text-[22px] font-bold leading-none text-ink">{origin.id}</p>
-                  <p className="mt-1 text-[10.5px] text-muted">{origin.city}</p>
+                  <p className="font-display text-[22px] font-bold leading-none text-ink">{origin?.id || "---"}</p>
+                  <p className="mt-1 text-[10.5px] text-muted">{origin?.city || ""}</p>
                 </div>
                 <div className="flex flex-1 items-center gap-2 px-2">
                   <span className="h-px flex-1 bg-line" />
@@ -195,7 +241,7 @@ export function BundleView() {
               </div>
               <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3 text-[11.5px] text-muted">
                 <span>{formatDate(checkIn, { year: undefined })} → {formatDate(checkOut)}</span>
-                <span className="font-semibold text-ink">{format(origin.fare)} / passenger</span>
+                <span className="font-semibold text-ink">{origin ? format(origin.fare) : "—"} / passenger</span>
               </div>
             </div>
           </section>
@@ -205,7 +251,7 @@ export function BundleView() {
               <span className="grid h-8 w-8 place-items-center rounded-full bg-plum-50 text-plum-700"><Icon name="bed" className="h-4 w-4" /></span>
               <div>
                 <h2 className="font-display text-[18px] font-bold tracking-tight text-ink">Your stay</h2>
-                <p className="text-[11.5px] text-muted">The 10% bundle discount applies automatically.</p>
+                <p className="text-[11.5px] text-muted">Bundle discount is applied automatically when available.</p>
               </div>
             </div>
 
@@ -237,7 +283,7 @@ export function BundleView() {
               )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13.5px] font-semibold text-ink">{property.name}</p>
-                <p className="text-[11px] text-muted">{property.area} · {quote.room.name} · {quote.nights} night{quote.nights === 1 ? "" : "s"}</p>
+                <p className="text-[11px] text-muted">{property.area} · {quote?.room?.name || room.name || "Selected room"} · {quote?.nights || "—"} night{quote?.nights === 1 ? "" : "s"}</p>
                 <p className="mt-0.5 text-[11px] font-medium text-emerald-700">{property.verified ? "Verified" : "Listing"}{property.freeCancellation ? " · free cancellation" : ""}</p>
               </div>
               <p className="shrink-0 text-[13px] font-bold text-ink">{format(property.price)}<span className="text-[10px] font-normal text-muted"> /night</span></p>
@@ -245,32 +291,42 @@ export function BundleView() {
           </section>
 
           <div className="rounded-lg bg-cream p-4 text-[11.5px] leading-relaxed text-ink/75">
-            <strong className="font-semibold text-ink">How the bundle works:</strong> your flight and stay are reserved together. The 10% discount applies to the stay portion and appears as a line item at checkout.
+            <strong className="font-semibold text-ink">How the bundle works:</strong> your flight and stay are reserved together. Any bundle discount is shown in the summary and confirmed at checkout.
           </div>
         </div>
 
         <aside>
           <div className="sticky top-24 rounded-xl border border-line bg-white p-5 shadow-card">
             <h2 className="font-display text-[18px] font-bold tracking-tight text-ink">Bundle summary</h2>
-            <p className="mt-0.5 text-[11.5px] text-muted">{origin.city} → Jos · {passengers} passenger{passengers === 1 ? "" : "s"}</p>
+            <p className="mt-0.5 text-[11.5px] text-muted">{origin?.city || ""} → Jos · {passengers} passenger{passengers === 1 ? "" : "s"}</p>
 
-            <div className="mt-4 space-y-2.5 text-[12.5px]">
-              <div className="flex items-center justify-between gap-3"><span className="text-muted">Flights ({passengers} × {format(origin.fare)})</span><span className="font-medium text-ink">{format(flightTotal)}</span></div>
-              <div className="flex items-center justify-between gap-3"><span className="text-muted">Stay ({quote.nights} nights)</span><span className="font-medium text-ink">{format(quote.subtotal)}</span></div>
-              <div className="flex items-center justify-between gap-3"><span className="text-muted">Cleaning fee</span><span className="font-medium text-ink">{format(quote.cleaning)}</span></div>
-              <div className="flex items-center justify-between gap-3"><span className="text-muted">Service fee (7%)</span><span className="font-medium text-ink">{format(quote.service)}</span></div>
-              <div className="flex items-center justify-between gap-3"><span className="text-emerald-700">Bundle discount (10% stay)</span><span className="font-semibold text-emerald-700">−{format(savings)}</span></div>
-            </div>
-
-            <div className="mt-4 border-t border-line pt-4">
-              <div className="flex items-end justify-between">
-                <p className="text-[12px] text-muted">Bundle total</p>
-                <p className="font-display text-[22px] font-bold leading-none text-ink">{format(total)}</p>
+            {!quote ? (
+              <div className="mt-4 rounded-lg border border-line bg-canvas p-4 text-[12px] text-muted">
+                {quoteLoading ? "Calculating bundle price…" : "Select valid dates and options to see pricing."}
               </div>
-              <p className="mt-1.5 text-[10.5px] text-muted">You save {format(savings)} vs booking separately</p>
-            </div>
+            ) : (
+              <>
+                <div className="mt-4 space-y-2.5 text-[12.5px]">
+                  <div className="flex items-center justify-between gap-3"><span className="text-muted">Flights ({passengers} × {format(origin?.fare || 0)})</span><span className="font-medium text-ink">{format(flightTotal)}</span></div>
+                  <div className="flex items-center justify-between gap-3"><span className="text-muted">Stay ({quote.nights} nights)</span><span className="font-medium text-ink">{format(quote.subtotal)}</span></div>
+                  <div className="flex items-center justify-between gap-3"><span className="text-muted">Cleaning fee</span><span className="font-medium text-ink">{format(quote.cleaning)}</span></div>
+                  <div className="flex items-center justify-between gap-3"><span className="text-muted">Service fee</span><span className="font-medium text-ink">{format(quote.service)}</span></div>
+                  <div className="flex items-center justify-between gap-3"><span className="text-emerald-700">Bundle discount</span><span className="font-semibold text-emerald-700">−{format(savings)}</span></div>
+                </div>
 
-            <Button full size="lg" className="mt-4" iconRight="arrowRight" onClick={reserve}>Reserve bundle</Button>
+                <div className="mt-4 border-t border-line pt-4">
+                  <div className="flex items-end justify-between">
+                    <p className="text-[12px] text-muted">Bundle total</p>
+                    <p className="font-display text-[22px] font-bold leading-none text-ink">{format(total)}</p>
+                  </div>
+                  <p className="mt-1.5 text-[10.5px] text-muted">You save {format(savings)} vs booking separately</p>
+                </div>
+              </>
+            )}
+
+            <Button full size="lg" className="mt-4" iconRight="arrowRight" onClick={reserve} disabled={!quote || quoteLoading || !origin}>
+              Reserve bundle
+            </Button>
             <p className="mt-2 text-center text-[10.5px] text-muted">You&apos;ll confirm guest details and payment next.</p>
           </div>
         </aside>
