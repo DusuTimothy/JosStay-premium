@@ -26,3 +26,9 @@ export const LoginSchema = z
     password: z.string().min(1).max(72),
   })
   .strict();
+
+export const GoogleAuthSchema = z
+  .object({
+    credential: z.string().trim().min(1).max(4096),
+  })
+  .strict();

@@ -23,6 +23,18 @@ export const publicUser = (user) =>
       }
     : null;
 
+const mapAuthProfile = (row) =>
+  row
+    ? {
+        id: row.id,
+        email: row.email,
+        passwordHash: row.password_hash ?? null,
+        name: row.full_name,
+        role: row.role,
+        googleSub: row.google_sub ?? null,
+      }
+    : null;
+
 export const findUserByEmail = async (email) => {
   const normalized = normalizeEmail(email);
 
@@ -32,23 +44,14 @@ export const findUserByEmail = async (email) => {
 
   try {
     const { rows } = await query(
-      `select id, email, password_hash, full_name, role
+      `select id, email, password_hash, full_name, role, google_sub
        from public.profiles
        where lower(email) = lower($1)
        limit 1`,
       [normalized],
     );
 
-    const data = rows[0];
-    return data
-      ? {
-          id: data.id,
-          email: data.email,
-          passwordHash: data.password_hash,
-          name: data.full_name,
-          role: data.role,
-        }
-      : null;
+    return mapAuthProfile(rows[0]);
   } catch {
     throw new HttpError(503, "Account service is temporarily unavailable");
   }
@@ -66,6 +69,26 @@ export const findUserById = async (id) => {
        where id = $1::uuid
        limit 1`,
       [id],
+    );
+    return mapProfile(rows[0] || null);
+  } catch {
+    throw new HttpError(503, "Account service is temporarily unavailable");
+  }
+};
+
+export const findUserByGoogleSub = async (googleSub) => {
+  if (!googleSub) return null;
+  if (!isDatabaseEnabled) {
+    return users.find((user) => user.googleSub === googleSub) ?? null;
+  }
+
+  try {
+    const { rows } = await query(
+      `select id, email, full_name, role
+       from public.profiles
+       where google_sub = $1
+       limit 1`,
+      [googleSub],
     );
     return mapProfile(rows[0] || null);
   } catch {
@@ -113,6 +136,78 @@ export const createUser = async ({ name, email, password, role = "guest" }) => {
   } catch (error) {
     if (error?.code === "23505") {
       throw new HttpError(409, "Email already registered");
+    }
+    throw new HttpError(503, "Account service is temporarily unavailable");
+  }
+};
+
+export const createOrLinkGoogleUser = async ({ email, name, googleSub }) => {
+  if (!googleSub) throw new HttpError(400, "Google account identifier is required");
+  const normalized = normalizeEmail(email);
+  const fullName = name?.trim() || normalized.split("@")[0] || "Google User";
+
+  if (!isDatabaseEnabled) {
+    const bySub = users.find((user) => user.googleSub === googleSub);
+    if (bySub) return publicUser(bySub);
+    const byEmail = users.find((user) => user.email === normalized);
+    if (byEmail) {
+      byEmail.googleSub = byEmail.googleSub || googleSub;
+      if (!byEmail.name && fullName) byEmail.name = fullName;
+      return publicUser(byEmail);
+    }
+    const nextId = users.reduce((max, user) => Math.max(max, Number(user.id) || 0), 0) + 1;
+    const user = {
+      id: nextId,
+      name: fullName,
+      email: normalized,
+      passwordHash: null,
+      role: "guest",
+      googleSub,
+      createdAt: new Date().toISOString(),
+    };
+    users.push(user);
+    return publicUser(user);
+  }
+
+  try {
+    const bySub = await query(
+      `select id, email, full_name, role from public.profiles where google_sub = $1 limit 1`,
+      [googleSub],
+    );
+    if (bySub.rows[0]) return mapProfile(bySub.rows[0]);
+
+    const byEmail = await query(
+      `select id, email, full_name, role, google_sub from public.profiles where lower(email) = lower($1) limit 1`,
+      [normalized],
+    );
+    if (byEmail.rows[0]) {
+      const existing = byEmail.rows[0];
+      if (existing.google_sub && existing.google_sub !== googleSub) {
+        throw new HttpError(409, "This email is linked to a different Google account");
+      }
+      const linked = await query(
+        `update public.profiles
+         set google_sub = $2,
+             full_name = case when coalesce(trim(full_name), '') = '' then $3 else full_name end,
+             updated_at = now()
+         where id = $1
+         returning id, email, full_name, role`,
+        [existing.id, googleSub, fullName],
+      );
+      return mapProfile(linked.rows[0]);
+    }
+
+    const created = await query(
+      `insert into public.profiles (email, password_hash, full_name, role, google_sub)
+       values ($1, null, $2, 'guest'::public.user_role, $3)
+       returning id, email, full_name, role`,
+      [normalized, fullName, googleSub],
+    );
+    return mapProfile(created.rows[0]);
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    if (error?.code === "23505") {
+      throw new HttpError(409, "Unable to link this Google account");
     }
     throw new HttpError(503, "Account service is temporarily unavailable");
   }
