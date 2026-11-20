@@ -240,6 +240,22 @@ export const getPropertyAvailability = async (slug) => {
     return { property: context.property.slug, days, sampleData: true };
   }
 
+  // Best-effort: release stale unpaid reservations before computing availability.
+  try {
+    await query(
+      `update public.bookings b
+       set status = 'cancelled'::public.booking_status,
+           cancelled_at = coalesce(b.cancelled_at, now()),
+           payment_status = 'abandoned'::public.payment_status
+       where b.status = 'upcoming'
+         and b.paid_at is null
+         and b.payment_status in ('pending', 'initialized')
+         and b.updated_at < (now() - interval '30 minutes')`,
+    );
+  } catch {
+    // Ignore expiry errors; availability should still be computed from current active bookings.
+  }
+
   const roomIds = context.rooms.map((room) => room.dbId).filter(Boolean);
   const unavailable = new Set();
 
@@ -269,6 +285,41 @@ export const getPropertyAvailability = async (slug) => {
       }
     } catch {
       throw new HttpError(503, "Availability is temporarily unavailable");
+    }
+  }
+
+  // Host-managed availability blocks (property-wide or room-specific).
+  if (context.dbId) {
+    try {
+      const params = [context.dbId, start, end];
+      let roomFilter = "";
+      if (roomIds.length) {
+        const roomPlaceholders = roomIds.map((_, index) => `$${index + 4}::uuid`).join(", ");
+        roomFilter = `and (b.room_id is null or b.room_id in (${roomPlaceholders}))`;
+        params.push(...roomIds);
+      } else {
+        roomFilter = "and b.room_id is null";
+      }
+
+      const { rows } = await query(
+        `select b.start_date, b.end_date
+         from public.property_availability_blocks b
+         where b.property_id = $1::uuid
+           ${roomFilter}
+           and b.start_date < $3::date
+           and b.end_date > $2::date`,
+        params,
+      );
+
+      for (const block of rows) {
+        const blockStart = String(block.start_date).slice(0, 10);
+        const blockEnd = String(block.end_date).slice(0, 10);
+        const from = blockStart > start ? blockStart : start;
+        const to = blockEnd < end ? blockEnd : end;
+        eachDate(from, to, (date) => unavailable.add(date));
+      }
+    } catch {
+      // If blocks table/query is unavailable, fall back to booking-based availability.
     }
   }
 
