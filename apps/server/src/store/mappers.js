@@ -108,29 +108,41 @@ export const mapPropertyRow = (row) => {
   };
 };
 
-export const mapBookingRow = (row) => {
+export const mapBookingRow = (row, { includeInternal = false } = {}) => {
   const property = first(row.properties) || {};
   const room = first(row.rooms) || {};
 
+  const paymentStatus = row.payment_status || row.paymentStatus || null;
+  const paymentReference = row.payment_reference || row.paymentReference || null;
+  const paymentProvider = row.payment_provider || row.paymentProvider || null;
+  const paidAt = row.paid_at || row.paidAt || null;
+
   return {
+    ...(includeInternal && row.id ? { id: row.id } : {}),
     reference: row.reference,
-    propertySlug: property.slug,
-    propertyName: property.name,
-    roomId: room.code,
-    roomName: room.name,
-    checkIn: toDateString(row.check_in),
-    checkOut: toDateString(row.check_out),
+    propertySlug: property.slug || row.propertySlug,
+    propertyName: property.name || row.propertyName,
+    roomId: room.code || row.roomId,
+    roomName: room.name || row.roomName,
+    checkIn: toDateString(row.check_in || row.checkIn),
+    checkOut: toDateString(row.check_out || row.checkOut),
     guests: row.guests,
-    airportPickup: row.airport_pickup,
-    paymentMethod: row.payment_method,
+    airportPickup: row.airport_pickup ?? row.airportPickup ?? false,
+    paymentMethod: row.payment_method || row.paymentMethod,
     ...(row.requests ? { requests: row.requests } : {}),
     status: row.status,
     total: row.total,
-    currency: row.currency,
+    currency: row.currency || "NGN",
     quote: row.quote,
-    createdAt: toDateTimeString(row.created_at),
-    ...(row.cancelled_at ? { cancelledAt: toDateTimeString(row.cancelled_at) } : {}),
-    guest: {
+    createdAt: toDateTimeString(row.created_at || row.createdAt),
+    ...(row.cancelled_at || row.cancelledAt
+      ? { cancelledAt: toDateTimeString(row.cancelled_at || row.cancelledAt) }
+      : {}),
+    ...(paymentStatus ? { paymentStatus } : {}),
+    ...(paymentReference ? { paymentReference } : {}),
+    ...(paymentProvider ? { paymentProvider } : {}),
+    ...(paidAt ? { paidAt: toDateTimeString(paidAt) } : {}),
+    guest: row.guest || {
       firstName: row.guest_first_name,
       lastName: row.guest_last_name,
       email: row.guest_email,

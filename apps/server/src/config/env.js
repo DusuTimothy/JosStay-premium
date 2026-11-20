@@ -23,8 +23,26 @@ const RawEnvSchema = z.object({
   REDIS_CA_CERT_PATH: z.string().optional().default(""),
   REDIS_TLS_REJECT_UNAUTHORIZED: z.string().optional().default(""),
 
+  // Integrations
+  NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY: z.string().optional().default(""),
+  PAYSTACK_SECRET_KEY: z.string().optional().default(""),
+  PAYSTACK_WEBHOOK_SECRET: z.string().optional().default(""),
+  BREVO_API_KEY: z.string().optional().default(""),
+  BREVO_SENDER_EMAIL: z.string().optional().default(""),
+  BREVO_SENDER_NAME: z.string().optional().default(""),
+  CLOUDINARY_CLOUD_NAME: z.string().optional().default(""),
+  CLOUDINARY_API_KEY: z.string().optional().default(""),
+  CLOUDINARY_API_SECRET: z.string().optional().default(""),
+  CLOUDINARY_URL: z.string().optional().default(""),
+
   JWT_SECRET: z.string().optional().default(""),
-  JWT_EXPIRES_IN: z.string().optional().default("7d"),
+  JWT_EXPIRES_IN: z.string().optional().default(""),
+  ACCESS_TOKEN_EXPIRES_IN: z.string().optional().default(""),
+  REFRESH_TOKEN_EXPIRES_IN_DAYS: z.coerce.number().int().min(1).max(90).default(30),
+  REFRESH_TOKEN_COOKIE_NAME: z.string().optional().default("josstay_refresh"),
+  AUTH_COOKIE_SECURE: z.string().optional().default(""),
+  AUTH_COOKIE_SAMESITE: z.enum(["lax", "strict", "none", ""]).optional().default(""),
+  GOOGLE_CLIENT_ID: z.string().optional().default(""),
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
   TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
   API_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100000).default(300),
@@ -123,9 +141,42 @@ if (!configuredJwtSecret) {
   );
 }
 
-export const JWT_EXPIRES_IN = raw.JWT_EXPIRES_IN;
+const configuredAccessTokenExpiresIn =
+  clean(raw.ACCESS_TOKEN_EXPIRES_IN) || clean(raw.JWT_EXPIRES_IN);
+
+export const ACCESS_TOKEN_EXPIRES_IN =
+  configuredAccessTokenExpiresIn || (IS_PRODUCTION ? "15m" : "7d");
+// Backward-compatible export; prefer ACCESS_TOKEN_EXPIRES_IN for new code.
+export const JWT_EXPIRES_IN = ACCESS_TOKEN_EXPIRES_IN;
 export const JWT_ISSUER = "josstay-api";
 export const JWT_AUDIENCE = "josstay-client";
+
+export const REFRESH_TOKEN_EXPIRES_IN_DAYS = raw.REFRESH_TOKEN_EXPIRES_IN_DAYS;
+export const REFRESH_TOKEN_COOKIE_NAME = clean(raw.REFRESH_TOKEN_COOKIE_NAME) || "josstay_refresh";
+export const AUTH_COOKIE_SECURE = clean(raw.AUTH_COOKIE_SECURE)
+  ? cleanBool(raw.AUTH_COOKIE_SECURE, IS_PRODUCTION)
+  : IS_PRODUCTION;
+const configuredSameSite = clean(raw.AUTH_COOKIE_SAMESITE).toLowerCase();
+export const AUTH_COOKIE_SAMESITE =
+  configuredSameSite === "lax" || configuredSameSite === "strict" || configuredSameSite === "none"
+    ? configuredSameSite
+    : (IS_PRODUCTION ? "none" : "lax");
+
+export const GOOGLE_CLIENT_ID = clean(raw.GOOGLE_CLIENT_ID);
+
+export const PAYSTACK_SECRET_KEY = clean(raw.PAYSTACK_SECRET_KEY);
+export const PAYSTACK_WEBHOOK_SECRET = clean(raw.PAYSTACK_WEBHOOK_SECRET);
+export const PAYSTACK_PUBLIC_KEY = clean(raw.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY);
+
+export const BREVO_API_KEY = clean(raw.BREVO_API_KEY);
+export const BREVO_SENDER_EMAIL = clean(raw.BREVO_SENDER_EMAIL);
+export const BREVO_SENDER_NAME = clean(raw.BREVO_SENDER_NAME) || "JosStay";
+
+export const CLOUDINARY_CLOUD_NAME = clean(raw.CLOUDINARY_CLOUD_NAME);
+export const CLOUDINARY_API_KEY = clean(raw.CLOUDINARY_API_KEY);
+export const CLOUDINARY_API_SECRET = clean(raw.CLOUDINARY_API_SECRET);
+export const CLOUDINARY_URL = clean(raw.CLOUDINARY_URL);
+
 export const BCRYPT_ROUNDS = raw.BCRYPT_ROUNDS;
 
 export const TRUST_PROXY = raw.TRUST_PROXY;
