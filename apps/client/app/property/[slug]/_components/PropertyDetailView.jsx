@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/Button";
 import { RatingStars } from "@/components/ui/RatingStars";
 import { Icon } from "@/components/ui/Icon";
 import { useBooking, useCurrency, useToast } from "@/components/providers";
+import { supportWhatsAppUrl } from "@/lib/contact";
 import { EmptyState } from "@/components/shared/states";
 import { amenityIcon, typeEyebrow } from "./property-utils";
 import { Divider, TrustRow } from "./PropertyPrimitives";
@@ -451,7 +452,19 @@ export function PropertyDetailView() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" icon="whatsapp" onClick={() => toast("Message sent to your host (demo)", "success")}>Message host</Button>
+              <Button
+                variant="secondary"
+                icon="whatsapp"
+                onClick={() =>
+                  window.open(
+                    supportWhatsAppUrl(`Hi JosStay, I have an enquiry about ${property.name}.`),
+                    "_blank",
+                    "noopener,noreferrer",
+                  )
+                }
+              >
+                Contact support
+              </Button>
               <Button href="/help" variant="ghost" iconRight="arrowRight" className="!px-2">Help centre</Button>
             </div>
           </div>
