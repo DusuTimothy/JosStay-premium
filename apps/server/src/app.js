@@ -13,6 +13,8 @@ import authRoutes from "./routes/authRoutes.js";
 import hostRoutes from "./routes/hostRoutes.js";
 import currencyRoutes from "./routes/currencyRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
+import uploadRoutes from "./routes/uploadRoutes.js";
+import bundleRoutes from "./routes/bundleRoutes.js";
 import { HttpError } from "./lib/http.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandlers.js";
 import { apiLimiter, authLimiter } from "./middleware/rateLimit.js";
@@ -80,6 +82,8 @@ app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/host", hostRoutes);
 app.use("/api/currency", currencyRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/uploads", uploadRoutes);
+app.use("/api/bundle", bundleRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

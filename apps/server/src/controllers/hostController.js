@@ -1,5 +1,6 @@
 import { asyncHandler, HttpError } from "../lib/http.js";
-import { createUser, findUserByEmail, publicUser, touchLastLogin } from "../store/userStore.js";
+import { sendHostListingSubmittedEmail, sendHostWelcomeEmail } from "../lib/notifications.js";
+import { createUser, findUserByEmail, findUserById, publicUser, touchLastLogin } from "../store/userStore.js";
 import {
   createHostListing,
   createHostListingBlock,
@@ -61,6 +62,10 @@ export const onboardHost = asyncHandler(async (req, res) => {
   const payload = HostOnboardSchema.parse(req.body || {});
   const host = await ensureHostProfile({ userId: req.auth.userId, name: payload.name || req.auth.email?.split("@")[0] || "Host" });
   const dashboard = await getHostDashboard(req.auth);
+  try {
+    const user = await findUserById(req.auth.userId);
+    if (user?.email) await sendHostWelcomeEmail({ to: user.email, name: host?.name || user.name });
+  } catch {}
   res.status(201).json({
     data: {
       host: {
@@ -93,6 +98,9 @@ export const registerHost = asyncHandler(async (req, res) => {
 
   await ensureHostProfile({ userId: user.id, name: payload.name });
   await touchLastLogin(user.id).catch(() => {});
+  try {
+    await sendHostWelcomeEmail({ to: user.email, name: payload.name });
+  } catch {}
 
   return issueAuth({ req, res, user: { ...user, role: "host" }, status: 201, message: "Host account created" });
 });
@@ -101,6 +109,16 @@ export const registerHost = asyncHandler(async (req, res) => {
 export const createListing = asyncHandler(async (req, res) => {
   const payload = HostListingCreateSchema.parse(req.body);
   const result = await createHostListing(req.auth, payload);
+  try {
+    const user = await findUserById(req.auth.userId);
+    if (user?.email) {
+      await sendHostListingSubmittedEmail({
+        to: user.email,
+        name: user.name || "Host",
+        listingName: result?.data?.name || payload.name,
+      });
+    }
+  } catch {}
   res.status(201).json(result);
 });
 
