@@ -42,11 +42,28 @@ const buildSslConfig = () => {
   return undefined;
 };
 
+const normalizeConnectionStringForSsl = (connectionString, ssl) => {
+  if (!connectionString || !ssl) return connectionString;
+  try {
+    const url = new URL(connectionString);
+    // When an explicit CA/SSL config is provided, let our ssl object be authoritative.
+    url.searchParams.delete("sslmode");
+    url.searchParams.delete("sslrootcert");
+    url.searchParams.delete("sslcert");
+    url.searchParams.delete("sslkey");
+    url.searchParams.delete("sslpassword");
+    url.searchParams.delete("uselibpqcompat");
+    return url.toString();
+  } catch {
+    return connectionString;
+  }
+};
+
 const buildPoolConfig = () => {
   const ssl = buildSslConfig();
   if (DATABASE_URL) {
     return {
-      connectionString: DATABASE_URL,
+      connectionString: normalizeConnectionStringForSsl(DATABASE_URL, ssl),
       ...(ssl ? { ssl } : {}),
     };
   }
