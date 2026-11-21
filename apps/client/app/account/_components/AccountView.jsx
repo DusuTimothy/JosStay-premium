@@ -15,7 +15,7 @@ const SIGNUP_MIN_PASSWORD_LENGTH = 8;
 const shortcuts = [
   { href: "/bookings", icon: "calendar", title: "My bookings", text: "View and manage your stays in Jos." },
   { href: "/host/dashboard", icon: "home", title: "Host dashboard", text: "Manage listings, calendar and payouts." },
-  { href: "/bundle", icon: "plane", title: "Flight + stay", text: "Plan travel and accommodation together." },
+  { href: "/bundle", icon: "plane", title: "Flight + stay", text: "Coming soon — flight booking will be available later." },
   { href: "/help", icon: "whatsapp", title: "Help centre", text: "Answers, policies and support." },
 ];
 

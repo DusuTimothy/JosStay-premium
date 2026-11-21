@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { formatDate, quoteStay, typeLabel } from "@josstay/shared";
+import { formatDate, nightsBetween, typeLabel } from "@josstay/shared";
 import { PriceSummary } from "@/components/shared/PriceSummary";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -55,6 +55,8 @@ export function CheckoutView() {
   const [property, setProperty] = useState(null);
   const [propertyLoading, setPropertyLoading] = useState(false);
   const [propertyError, setPropertyError] = useState("");
+  const [serverQuote, setServerQuote] = useState(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
 
   const [form, setForm] = useState({
     firstName: "",
@@ -105,18 +107,39 @@ export function CheckoutView() {
     }));
   }, [auth.user]);
 
-  const quote = useMemo(() => {
-    if (!property || !draft) return null;
-    try {
-      return quoteStay(property, draft.checkIn, draft.checkOut, {
-        roomId: draft.roomId,
-        airportPickup: pickup,
-        bundleDiscount: draft.bundle,
-      });
-    } catch {
-      return null;
-    }
-  }, [property, draft, pickup]);
+  useEffect(() => {
+    if (!property?.slug || !draft?.checkIn || !draft?.checkOut) return;
+    let active = true;
+    setQuoteLoading(true);
+    (async () => {
+      try {
+        const qs = new URLSearchParams({
+          checkIn: draft.checkIn,
+          checkOut: draft.checkOut,
+          guests: String(draft.guests || 1),
+          airportPickup: pickup ? "true" : "false",
+          bundle: draft.bundle ? "true" : "false",
+        });
+        if (draft.roomId) qs.set("roomId", draft.roomId);
+        const res = await api.get(`/api/properties/${encodeURIComponent(property.slug)}/quote?${qs.toString()}`, { cache: "no-store" });
+        if (active) setServerQuote(res?.data?.quote || null);
+      } catch {
+        if (active) setServerQuote(null);
+      } finally {
+        if (active) setQuoteLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [property?.slug, draft?.checkIn, draft?.checkOut, draft?.roomId, draft?.guests, draft?.bundle, pickup]);
+
+  const quote = serverQuote || (property && draft ? {
+    nightly: property?.price || 0,
+    nights: nightsBetween(draft.checkIn, draft.checkOut) || 0,
+    subtotal: (property?.price || 0) * (nightsBetween(draft.checkIn, draft.checkOut) || 0),
+    cleaning: 0, service: 0, pickup: pickup ? 0 : 0, discount: 0,
+    total: (property?.price || 0) * (nightsBetween(draft.checkIn, draft.checkOut) || 0),
+    room: (property?.rooms || []).find((r) => r.id === draft.roomId) || property?.rooms?.[0] || null,
+  } : null);
 
   const update = (key, value) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -436,6 +459,7 @@ export function CheckoutView() {
           <div className="sticky top-24 space-y-3">
             <div className="rounded-xl border border-line bg-white p-5 shadow-card">
               <PriceSummary quote={quote} checkIn={draft.checkIn} checkOut={draft.checkOut} pickup={pickup} bundle={Boolean(draft.bundle)} flight={draft.bundleFlight} />
+              {quoteLoading && <p className="mt-2 text-[11px] text-muted">Updating price…</p>}
             </div>
 
             <div className="rounded-xl border border-line bg-white p-4">

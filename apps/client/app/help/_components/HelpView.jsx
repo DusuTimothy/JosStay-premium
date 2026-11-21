@@ -168,7 +168,7 @@ export function HelpView() {
             <div className="mt-2 divide-y divide-line">
               {[
                 { label: "Find a stay in Jos", href: "/search" },
-                { label: "Build a flight + stay bundle", href: "/bundle" },
+                { label: "Flight + stay bundle (coming soon)", href: "/bundle" },
                 { label: "Become a host", href: "/host" },
                 { label: "View cancellation policy", href: "#cancellation" },
               ].map((item) => (

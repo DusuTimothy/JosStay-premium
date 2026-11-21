@@ -67,6 +67,7 @@ export function SearchView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const [serverQuotes, setServerQuotes] = useState({});
   const [view, setView] = useState("list");
   const [filterOpen, setFilterOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -131,12 +132,37 @@ export function SearchView() {
     };
   }, [requestKey, reloadKey]);
 
+  useEffect(() => {
+    if (!query.checkIn || !query.checkOut || !Array.isArray(all) || all.length === 0) {
+      setServerQuotes({});
+      return;
+    }
+    let active = true;
+    const targets = all.slice(0, 24);
+    (async () => {
+      const entries = await Promise.all(targets.map(async (property) => {
+        try {
+          const qs = new URLSearchParams({ checkIn: query.checkIn, checkOut: query.checkOut, guests: String(query.guests || 1) });
+          const res = await api.get(`/api/properties/${encodeURIComponent(property.slug)}/quote?${qs.toString()}`, { cache: "no-store" });
+          return [property.slug, res?.data?.quote || null];
+        } catch {
+          return [property.slug, null];
+        }
+      }));
+      if (!active) return;
+      const map = {};
+      for (const [slug, q] of entries) if (slug && q) map[slug] = q;
+      setServerQuotes(map);
+    })();
+    return () => { active = false; };
+  }, [all, query.checkIn, query.checkOut, query.guests]);
+
   const quoteFor = useCallback(
     (property) => {
       if (!query.checkIn || !query.checkOut) return null;
-      return quoteStay(property, query.checkIn, query.checkOut);
+      return serverQuotes[property.slug] || quoteStay(property, query.checkIn, query.checkOut);
     },
-    [query.checkIn, query.checkOut],
+    [query.checkIn, query.checkOut, serverQuotes],
   );
 
   const updateQuery = (next) => {

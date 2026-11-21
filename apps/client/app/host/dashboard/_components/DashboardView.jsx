@@ -16,7 +16,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useAuth, useCurrency, useToast } from "@/components/providers";
 import { api } from "@/lib/api";
 import { SUPPORT_WHATSAPP_URL } from "@/lib/contact";
-import { EmptyState, LoadingResults } from "@/components/shared/states";
+import { EmptyState, ErrorState, LoadingResults } from "@/components/shared/states";
 import { SearchSelect } from "@/components/shared/SearchSelect";
 
 const TABS = [
@@ -26,22 +26,6 @@ const TABS = [
   { id: "payouts", label: "Payouts", icon: "wallet" },
 ];
 
-const FALLBACK_HOST_BOOKINGS = [
-  { guest: "Adaeze Okafor", property: "Crestview Boutique Hotel", unit: "Deluxe Room", dates: "5 – 8 Dec 2026", status: "Confirmed", gross: 301000, reference: "JS-8F2K1Q" },
-  { guest: "Tunde Adewale", property: "Crestview Boutique Hotel", unit: "Executive Suite", dates: "12 – 14 Dec 2026", status: "Confirmed", gross: 260000, reference: "JS-HST101" },
-  { guest: "Fatima Bello", property: "Crestview Boutique Hotel", unit: "Deluxe Room", dates: "28 – 30 Nov 2026", status: "Pending", gross: 181000, reference: "JS-HST102" },
-  { guest: "Emeka Iwu", property: "Crestview Boutique Hotel", unit: "Crestview Suite", dates: "20 – 22 Nov 2026", status: "Completed", gross: 312000, reference: "JS-HST103" },
-];
-
-const FALLBACK_LISTINGS = [
-  { id: "sample-1", name: "Crestview Boutique Hotel", type: "hotel", area: "Jos North", price: 85000, weekendPrice: 95000, status: "Live", verified: true, photoCount: 12, sample: true },
-];
-
-const FALLBACK_PAYOUTS = [
-  { reference: "JS-HST100", gross: 301000, commission: 30100, net: 270900, status: "paid" },
-  { reference: "JS-HST101", gross: 260000, commission: 26000, net: 234000, status: "scheduled" },
-  { reference: "JS-HST102", gross: 181000, commission: 18100, net: 162900, status: "on_hold" },
-];
 
 const today = toIso(new Date());
 
@@ -138,29 +122,7 @@ function Dashboard() {
       } else if (error?.status === 403) {
         setLoadError("forbidden");
       } else {
-        setDashboard({
-          host: { name: auth.user?.name || "Host" },
-          listings: FALLBACK_LISTINGS,
-          bookings: FALLBACK_HOST_BOOKINGS,
-          stats: {
-            listingsCount: FALLBACK_LISTINGS.length,
-            upcomingBookings: FALLBACK_HOST_BOOKINGS.filter((b) => b.status === "Confirmed" || b.status === "Pending").length,
-            gross: FALLBACK_HOST_BOOKINGS.reduce((sum, b) => sum + b.gross, 0),
-            net: Math.round(FALLBACK_HOST_BOOKINGS.reduce((sum, b) => sum + b.gross, 0) * 0.9),
-            pending: Math.round(FALLBACK_HOST_BOOKINGS.filter((b) => b.status === "Pending").reduce((sum, b) => sum + b.gross, 0) * 0.9),
-            occupancyRate: 72,
-          },
-          sampleData: true,
-        });
-        setPayouts({
-          data: FALLBACK_PAYOUTS,
-          totals: {
-            gross: FALLBACK_PAYOUTS.reduce((sum, p) => sum + p.gross, 0),
-            net: FALLBACK_PAYOUTS.reduce((sum, p) => sum + p.net, 0),
-            currency: "NGN",
-          },
-          sampleData: true,
-        });
+        setLoadError(error?.message || "Could not load host dashboard");
       }
       return { ok: false, error };
     } finally {
@@ -190,17 +152,8 @@ function Dashboard() {
   }, [auth.isLoading, auth.isAuthenticated, auth.user, refreshHostData]);
 
   const isSample = Boolean(dashboard?.sampleData || payouts?.sampleData);
-  const listings = useMemo(() => {
-    if (Array.isArray(dashboard?.listings) && dashboard.listings.length) return dashboard.listings;
-    if (loading) return [];
-    return isSample ? FALLBACK_LISTINGS : [];
-  }, [dashboard?.listings, isSample, loading]);
-
-  const hostBookings = useMemo(() => {
-    if (Array.isArray(dashboard?.bookings) && dashboard.bookings.length) return dashboard.bookings;
-    if (loading) return [];
-    return isSample ? FALLBACK_HOST_BOOKINGS : [];
-  }, [dashboard?.bookings, isSample, loading]);
+  const listings = useMemo(() => (Array.isArray(dashboard?.listings) ? dashboard.listings : []), [dashboard?.listings]);
+  const hostBookings = useMemo(() => (Array.isArray(dashboard?.bookings) ? dashboard.bookings : []), [dashboard?.bookings]);
 
   const hostName = dashboard?.host?.name || auth.user?.name || "Host";
   const hostFirstName = String(hostName).trim().split(/\s+/)[0] || "Host";
@@ -654,6 +607,18 @@ function Dashboard() {
           description="This dashboard is for host accounts. Create or switch to a host account to continue."
           actionLabel="Become a host"
           onAction={() => router.push("/host")}
+        />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="container-page py-16">
+        <ErrorState
+          title="Could not load host dashboard"
+          description={loadError}
+          onRetry={() => refreshHostData()}
         />
       </div>
     );

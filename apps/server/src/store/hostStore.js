@@ -617,3 +617,185 @@ export const deleteHostListingBlock = async (auth, listingId, blockId) => {
   return { ok: true };
 };
 
+const ADMIN_LISTING_SELECT = `
+  select
+    p.id, p.slug, p.name, p.type, p.area, p.address, p.price, p.weekend_price, p.summary, p.description,
+    p.verified, p.is_published, p.verification_status, p.submitted_for_verification_at, p.verified_at,
+    p.verification_notes, p.created_at, p.updated_at,
+    h.id as host_id, h.name as host_record_name,
+    pr.full_name as host_name, pr.email as host_email,
+    coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', d.id,
+        'documentType', d.document_type,
+        'fileName', d.file_name,
+        'fileUrl', d.file_url,
+        'mimeType', d.mime_type,
+        'status', d.status,
+        'notes', d.notes,
+        'submittedAt', d.submitted_at
+      ) order by d.submitted_at desc, d.created_at desc)
+      from public.host_verification_documents d
+      where d.property_id = p.id
+    ), '[]'::jsonb) as verification_documents,
+    coalesce((
+      select jsonb_agg(jsonb_build_object('url', pi.url, 'alt', pi.alt, 'position', pi.position) order by pi.position)
+      from public.property_images pi
+      where pi.property_id = p.id
+    ), '[]'::jsonb) as property_images
+  from public.properties p
+  join public.hosts h on h.id = p.host_id
+  join public.profiles pr on pr.id = h.user_id
+`;
+
+const toAdminListingResponse = (row) => {
+  const images = [...(row.property_images || [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((img) => img.url).filter(Boolean);
+  const verificationStatus = row.verification_status || (row.verified ? "verified" : row.is_published ? "verified" : "draft");
+  const status = row.is_published
+    ? "Live"
+    : verificationStatus === "pending_review"
+      ? "In review"
+      : verificationStatus === "rejected"
+        ? "Rejected"
+        : verificationStatus === "suspended"
+          ? "Suspended"
+          : "Draft";
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    type: row.type,
+    area: row.area,
+    address: row.address,
+    price: row.price,
+    weekendPrice: row.weekend_price ?? row.price,
+    description: row.description,
+    summary: row.summary,
+    status,
+    verificationStatus,
+    isPublished: Boolean(row.is_published),
+    verified: Boolean(row.verified),
+    submittedForVerificationAt: row.submitted_for_verification_at,
+    verifiedAt: row.verified_at,
+    verificationNotes: row.verification_notes || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    photoCount: images.length,
+    images,
+    host: {
+      id: row.host_id,
+      name: row.host_name,
+      email: row.host_email,
+      phone: row.host_phone || null,
+      businessName: row.host_record_name || null,
+    },
+    documents: Array.isArray(row.verification_documents) ? row.verification_documents : [],
+  };
+};
+
+export const listAdminReviewListings = async ({ status, limit = 50 } = {}) => {
+  if (!isDatabaseEnabled) {
+    throw new HttpError(503, "Admin review service is unavailable in sample mode");
+  }
+
+  const params = [];
+  let where = "where 1=1";
+  if (status) {
+    params.push(String(status));
+    where += ` and p.verification_status = $${params.length}`;
+  } else {
+    where += ` and p.verification_status in ('pending_review', 'rejected', 'draft', 'suspended', 'verified')`;
+  }
+  params.push(Math.min(Math.max(Number(limit) || 50, 1), 200));
+  const limitParam = `$${params.length}`;
+
+  const { rows } = await query(
+    `${ADMIN_LISTING_SELECT}
+     ${where}
+     order by
+       case when p.verification_status = 'pending_review' then 0 else 1 end,
+       p.submitted_for_verification_at desc nulls last,
+       p.updated_at desc
+     limit ${limitParam}`,
+    params,
+  );
+
+  return { data: rows.map(toAdminListingResponse), sampleData: false };
+};
+
+export const reviewHostListing = async ({ listingId, action, notes, reviewerUserId }) => {
+  if (!isDatabaseEnabled) {
+    throw new HttpError(503, "Admin review service is unavailable in sample mode");
+  }
+
+  const normalizedAction = String(action || "").toLowerCase();
+  if (!["approve", "reject", "suspend"].includes(normalizedAction)) {
+    throw new HttpError(400, "Invalid review action");
+  }
+
+  const { rows: existingRows } = await query(
+    `${ADMIN_LISTING_SELECT} where p.id = $1::uuid limit 1`,
+    [listingId],
+  );
+  const existing = existingRows[0];
+  if (!existing) throw new HttpError(404, "Listing not found");
+
+  const cleanNotes = notes ? String(notes).trim().slice(0, 2000) : null;
+  let verificationStatus = "pending_review";
+  let verified = false;
+  let isPublished = false;
+  let verifiedAt = null;
+
+  if (normalizedAction === "approve") {
+    verificationStatus = "verified";
+    verified = true;
+    isPublished = true;
+    verifiedAt = new Date().toISOString();
+  } else if (normalizedAction === "reject") {
+    verificationStatus = "rejected";
+  } else if (normalizedAction === "suspend") {
+    verificationStatus = "suspended";
+  }
+
+  const { rows } = await query(
+    `update public.properties
+     set verification_status = $2,
+         verified = $3,
+         is_published = $4,
+         verified_at = $5::timestamptz,
+         verification_notes = $6,
+         updated_at = now()
+     where id = $1::uuid
+     returning id`,
+    [listingId, verificationStatus, verified, isPublished, verifiedAt, cleanNotes],
+  );
+  if (!rows[0]) throw new HttpError(404, "Listing not found");
+
+  // Best-effort document status sync for audit clarity.
+  try {
+    const docStatus = normalizedAction === "approve" ? "approved" : normalizedAction === "reject" ? "rejected" : "submitted";
+    await query(
+      `update public.host_verification_documents
+       set status = $2, reviewed_at = now(), notes = coalesce($3, notes), updated_at = now()
+       where property_id = $1::uuid and status in ('submitted', 'pending_review')`,
+      [listingId, docStatus, cleanNotes],
+    );
+  } catch {}
+
+  const { rows: refreshedRows } = await query(
+    `${ADMIN_LISTING_SELECT} where p.id = $1::uuid limit 1`,
+    [listingId],
+  );
+  const refreshed = refreshedRows[0];
+  return {
+    data: toAdminListingResponse(refreshed),
+    sampleData: false,
+    meta: {
+      action: normalizedAction,
+      hostEmail: refreshed.host_email,
+      hostName: refreshed.host_name,
+      listingName: refreshed.name,
+    },
+  };
+};
+

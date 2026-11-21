@@ -4,7 +4,7 @@ import { Logo } from "./Logo";
 
 const links = [
   { label: "Explore stays", href: "/search" },
-  { label: "Add an optional flight", href: "/bundle" },
+  { label: "Flight + stay (coming soon)", href: "/bundle" },
   { label: "Manage booking", href: "/bookings" },
   { label: "List your property", href: "/host" },
   { label: "Help centre", href: "/help" },

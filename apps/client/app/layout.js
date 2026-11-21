@@ -8,7 +8,6 @@ export const metadata = {
   title: "JosStay — Stays in Jos, Plateau State",
   description:
     "Find and book verified hotels, apartments, shortlets, guest houses and Airbnb-style stays in Jos, Plateau State.",
-  icons: { icon: "/favicon.ico" },
 };
 
 export default function RootLayout({ children }) {

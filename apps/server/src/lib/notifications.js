@@ -74,3 +74,21 @@ export async function sendHostWelcomeEmail({ to, name }) {
   const htmlContent = `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111"><p>Hi ${safeName},</p><p>Your JosStay host account is ready. You can now create and manage your listings from your host dashboard.</p><p>JosStay</p></div>`;
   return sendTransactionalEmail({ to, subject, htmlContent, textContent, tags: ["host", "welcome"] });
 }
+
+export async function sendHostListingReviewEmail({ to, name, listingName, approved, notes }) {
+  if (!to) return { skipped: true, reason: "missing_email" };
+  const safeName = esc(name || "Host");
+  const safeListing = esc(listingName || "your listing");
+  const safeNotes = esc(notes || "");
+  const subject = approved
+    ? "Your JosStay listing has been approved"
+    : "Update on your JosStay listing review";
+  const statusLine = approved
+    ? `Your listing <strong>${safeListing}</strong> has been approved and is now live.`
+    : `Your listing <strong>${safeListing}</strong> needs attention before it can go live.`;
+  const notesHtml = !approved && safeNotes ? `<p><strong>Review notes:</strong> ${safeNotes}</p>` : "";
+  const notesText = !approved && notes ? `\nReview notes: ${notes}\n` : "";
+  const textContent = `Hi ${name || "Host"},\n\n${approved ? `Your listing "${listingName || "your listing"}" has been approved and is now live.` : `Your listing "${listingName || "your listing"}" was reviewed and needs attention before it can go live.`}${notesText}\nJosStay`;
+  const htmlContent = `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111"><p>Hi ${safeName},</p><p>${statusLine}</p>${notesHtml}<p>JosStay</p></div>`;
+  return sendTransactionalEmail({ to, subject, htmlContent, textContent, tags: ["host", "listing-review"] });
+}

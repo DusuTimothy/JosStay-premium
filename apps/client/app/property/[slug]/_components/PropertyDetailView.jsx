@@ -8,7 +8,6 @@ import {
   amenityLabel,
   formatDate,
   nightsBetween,
-  quoteStay,
   toIso,
   typeLabel,
 } from "@josstay/shared";
@@ -41,6 +40,8 @@ function PropertyDetailContent({ property }) {
   const [dateOpen, setDateOpen] = useState(false);
   const [bookingOpen, setBookingOpen] = useState(false);
   const [showAllAmenities, setShowAllAmenities] = useState(false);
+  const [serverQuote, setServerQuote] = useState(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
 
   const defaultState = useMemo(() => {
     const useDraft = draft && draft.propertySlug === property?.slug;
@@ -79,7 +80,38 @@ function PropertyDetailContent({ property }) {
     };
   }, [anyOverlay]);
 
-  const quote = quoteStay(property, state.checkIn, state.checkOut, { roomId: state.roomId });
+  useEffect(() => {
+    if (!property?.slug || !state.checkIn || !state.checkOut) return;
+    let active = true;
+    setQuoteLoading(true);
+    (async () => {
+      try {
+        const qs = new URLSearchParams({
+          checkIn: state.checkIn,
+          checkOut: state.checkOut,
+          guests: String(state.guests || 1),
+        });
+        if (state.roomId) qs.set("roomId", state.roomId);
+        const res = await api.get(`/api/properties/${encodeURIComponent(property.slug)}/quote?${qs.toString()}`, { cache: "no-store" });
+        if (active) setServerQuote(res?.data?.quote || null);
+      } catch {
+        if (active) setServerQuote(null);
+      } finally {
+        if (active) setQuoteLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [property?.slug, state.checkIn, state.checkOut, state.roomId, state.guests]);
+
+  const quote = serverQuote || {
+    nightly: property?.price || 0,
+    nights: nightsBetween(state.checkIn, state.checkOut) || 0,
+    subtotal: (property?.price || 0) * (nightsBetween(state.checkIn, state.checkOut) || 0),
+    cleaning: 0,
+    service: 0,
+    total: (property?.price || 0) * (nightsBetween(state.checkIn, state.checkOut) || 0),
+    room: (property?.rooms || []).find((r) => r.id === state.roomId) || property?.rooms?.[0] || null,
+  };
   const room = quote.room;
 
   const book = () => {
@@ -454,7 +486,7 @@ function PropertyDetailContent({ property }) {
 
         <aside className="hidden lg:block">
           <div className="sticky top-24">
-            <ReserveWidget property={property} state={state} setState={setState} quote={quote} onBook={book} onOpenDates={() => setDateOpen(true)} />
+            <ReserveWidget property={property} state={state} setState={setState} quote={quote} quoteLoading={quoteLoading} onBook={book} onOpenDates={() => setDateOpen(true)} />
             <div className="mt-4 flex items-start gap-2.5 rounded-lg bg-cream px-4 py-3 text-[11.5px] leading-relaxed text-ink/75">
               <Icon name="shield" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold-700" />
               Review the final price and booking details before you confirm your stay.
@@ -472,7 +504,7 @@ function PropertyDetailContent({ property }) {
             </p>
             <p className="mt-1 text-[10.5px] text-muted">
               {state.checkIn && state.checkOut
-                ? `${nightsBetween(state.checkIn, state.checkOut)} night${nightsBetween(state.checkIn, state.checkOut) === 1 ? "" : "s"} · ${format(quote.total)} total`
+                ? `${nightsBetween(state.checkIn, state.checkOut)} night${nightsBetween(state.checkIn, state.checkOut) === 1 ? "" : "s"} · ${format(quote.total || 0)} total`
                 : "Choose dates for total"}
             </p>
           </div>
@@ -549,8 +581,8 @@ function PropertyDetailContent({ property }) {
 
             <div className="mb-3 space-y-2 rounded-lg bg-canvas px-3.5 py-3 text-[12.5px]">
               <div className="flex justify-between">
-                <span className="text-muted">{format(quote.nightly)} × {quote.nights} night{quote.nights === 1 ? "" : "s"}</span>
-                <span className="font-medium text-ink">{format(quote.subtotal)}</span>
+                <span className="text-muted">{format(quote.nightly || 0)} × {quote.nights || 0} night{(quote.nights || 0) === 1 ? "" : "s"}</span>
+                <span className="font-medium text-ink">{format(quote.subtotal || 0)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted">Fees</span>
@@ -558,7 +590,7 @@ function PropertyDetailContent({ property }) {
               </div>
               <div className="flex justify-between border-t border-line pt-2">
                 <span className="font-bold text-ink">Total</span>
-                <span className="font-bold text-ink">{format(quote.total)}</span>
+                <span className="font-bold text-ink">{format(quote.total || 0)}</span>
               </div>
             </div>
 
