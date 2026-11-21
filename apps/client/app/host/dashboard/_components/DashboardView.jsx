@@ -318,6 +318,7 @@ function Dashboard() {
       form.append("signature", sig.signature);
       if (sig.folder) form.append("folder", sig.folder);
       if (sig.publicId) form.append("public_id", sig.publicId);
+      if (sig.tags) form.append("tags", sig.tags);
 
       const endpoint = sig.uploadUrl || `https://api.cloudinary.com/v1_1/${sig.cloudName}/${resourceType || "image"}/upload`;
       const response = await fetch(endpoint, { method: "POST", body: form });

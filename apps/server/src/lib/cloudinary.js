@@ -77,6 +77,7 @@ export const createUploadSignature = ({
     signature,
     folder: folder || undefined,
     publicId: publicId || undefined,
+    tags: tags || undefined,
     resourceType,
     uploadUrl: `https://api.cloudinary.com/v1_1/${cfg.cloudName}/${resourceType}/upload`,
   };
