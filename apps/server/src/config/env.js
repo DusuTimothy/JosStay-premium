@@ -26,7 +26,6 @@ const RawEnvSchema = z.object({
   // Integrations
   NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY: z.string().optional().default(""),
   PAYSTACK_SECRET_KEY: z.string().optional().default(""),
-  PAYSTACK_WEBHOOK_SECRET: z.string().optional().default(""),
   BREVO_API_KEY: z.string().optional().default(""),
   BREVO_SENDER_EMAIL: z.string().optional().default(""),
   BREVO_SENDER_NAME: z.string().optional().default(""),
@@ -165,7 +164,6 @@ export const AUTH_COOKIE_SAMESITE =
 export const GOOGLE_CLIENT_ID = clean(raw.GOOGLE_CLIENT_ID);
 
 export const PAYSTACK_SECRET_KEY = clean(raw.PAYSTACK_SECRET_KEY);
-export const PAYSTACK_WEBHOOK_SECRET = clean(raw.PAYSTACK_WEBHOOK_SECRET);
 export const PAYSTACK_PUBLIC_KEY = clean(raw.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY);
 
 export const BREVO_API_KEY = clean(raw.BREVO_API_KEY);
