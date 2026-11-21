@@ -133,12 +133,12 @@ export function SearchView() {
   }, [requestKey, reloadKey]);
 
   useEffect(() => {
-    if (!query.checkIn || !query.checkOut || !Array.isArray(all) || all.length === 0) {
+    if (!query.checkIn || !query.checkOut || !Array.isArray(results) || results.length === 0) {
       setServerQuotes({});
       return;
     }
     let active = true;
-    const targets = all.slice(0, 24);
+    const targets = results.slice(0, 24);
     (async () => {
       const entries = await Promise.all(targets.map(async (property) => {
         try {
@@ -155,7 +155,7 @@ export function SearchView() {
       setServerQuotes(map);
     })();
     return () => { active = false; };
-  }, [all, query.checkIn, query.checkOut, query.guests]);
+  }, [results, query.checkIn, query.checkOut, query.guests]);
 
   const quoteFor = useCallback(
     (property) => {
