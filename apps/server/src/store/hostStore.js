@@ -73,8 +73,15 @@ const toListingResponse = (row) => {
 
 const requireHost = async (auth) => {
   const host = await findHostByUserId(auth?.userId);
-  if (!host) throw new HttpError(403, "Host profile required");
-  return host;
+  if (host) return host;
+  // Admins can manage platform-owned listings, so provision a host profile on first use.
+  if (auth?.role === "admin" && auth?.userId) {
+    return ensureHostProfile({
+      userId: auth.userId,
+      name: auth.email ? String(auth.email).split("@")[0] : "JosStay Admin",
+    });
+  }
+  throw new HttpError(403, "Host profile required");
 };
 
 const getOwnedPropertyRow = async (hostId, propertyId) => {

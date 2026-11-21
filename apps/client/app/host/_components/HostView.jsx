@@ -43,7 +43,11 @@ export function HostView() {
   }, [auth.isAuthenticated, auth.user]);
 
   useEffect(() => {
-    if (!auth.isLoading && auth.isAuthenticated && auth.user?.role === "host") {
+    if (
+      !auth.isLoading &&
+      auth.isAuthenticated &&
+      (auth.user?.role === "host" || auth.user?.role === "admin")
+    ) {
       router.replace("/host/dashboard");
     }
   }, [auth.isLoading, auth.isAuthenticated, auth.user, router]);

@@ -1,0 +1,69 @@
+{
+  "_note": "EXAMPLE ONLY. Replace this content with real, verified inventory before importing into production. Slugs are the stable key used for idempotent upserts.",
+  "hosts": [
+    {
+      "key": "example-host",
+      "name": "Example Host",
+      "email": "host@example.com",
+      "joinedYear": 2024,
+      "superhost": false
+    }
+  ],
+  "listings": [
+    {
+      "slug": "example-rayfield-apartment",
+      "name": "Example Rayfield Apartment",
+      "type": "apartment",
+      "hostKey": "example-host",
+      "area": "Rayfield",
+      "address": "1 Example Close, Rayfield, Jos",
+      "price": 75000,
+      "weekendPrice": 85000,
+      "cleaningFee": 5000,
+      "badge": "New listing",
+      "maxGuests": 3,
+      "rating": 0,
+      "reviewCount": 0,
+      "summary": "A bright two-bedroom apartment close to Rayfield business district.",
+      "description": "Replace this example description with verified details about the property, check-in process, power/water supply, security, and nearby landmarks.",
+      "houseRules": [
+        "Check-in from 2:00 PM",
+        "Check-out by 11:00 AM",
+        "Valid ID required at check-in",
+        "No smoking indoors",
+        "No parties or events"
+      ],
+      "images": [
+        "https://images.pexels.com/photos/6077368/pexels-photo-6077368.jpeg?auto=compress&cs=tinysrgb&w=1600",
+        "https://images.pexels.com/photos/8135496/pexels-photo-8135496.jpeg?auto=compress&cs=tinysrgb&w=1600"
+      ],
+      "amenities": ["wifi", "backupPower", "parking", "security", "water"],
+      "rooms": [
+        {
+          "code": "standard",
+          "name": "Standard Room",
+          "price": 75000,
+          "weekendPrice": 85000,
+          "capacity": 2,
+          "beds": "1 queen bed",
+          "size": "24 m²",
+          "refundable": true
+        },
+        {
+          "code": "family",
+          "name": "Family Suite",
+          "price": 110000,
+          "weekendPrice": 120000,
+          "capacity": 4,
+          "beds": "2 queen beds",
+          "size": "42 m²",
+          "refundable": true
+        }
+      ],
+      "reviews": [],
+      "verified": true,
+      "isPublished": true,
+      "verificationStatus": "verified"
+    }
+  ]
+}

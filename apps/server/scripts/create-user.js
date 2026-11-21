@@ -61,7 +61,7 @@ const run = async () => {
     console.log(`Created ${profile.email} (${profile.role}).`);
   }
 
-  if (role === "host") {
+  if (role === "host" || role === "admin") {
     const host = await query(
       "select id from public.hosts where user_id = $1::uuid limit 1",
       [profile.id],

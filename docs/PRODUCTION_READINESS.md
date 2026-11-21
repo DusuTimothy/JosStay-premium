@@ -98,6 +98,7 @@ Step-by-step checklist for taking **JosStay Premium** from demo/prototype to a l
 
 ### 2.2 Server/data completeness
 - [ ] Load real production inventory/content into Postgres (properties, rooms, images, amenities, policies, reviews if applicable). Do not rely on `packages/shared/data.js` or sample seed scripts for live data.
+- [ ] Bulk-load/update real inventory with `npm --workspace @josstay/server run db:import-listings -- <file> --dry-run` then without `--dry-run` (see `docs/LISTINGS_IMPORT.md`).
 - [ ] Ensure property/search/availability endpoints read authoritative DB data and return accurate, paginated results.
 - [ ] Implement/complete APIs required by live UI (payments, confirmations, notifications, uploads, host listing management, admin operations) with validation and authz.
 - [ ] Remove or gate `sampleData` flags and demo responses in controllers/stores for production.
@@ -190,6 +191,6 @@ Step-by-step checklist for taking **JosStay Premium** from demo/prototype to a l
 - **Data/access:** `apps/server/src/lib/postgres.js`, `apps/server/src/lib/redis.js`, `apps/server/src/store/*`, `db/migrations/*`
 - **API surface:** `apps/server/src/routes/*`, `apps/server/src/controllers/*`, `apps/server/src/middleware/*`, `apps/server/src/validators/*`
 - **Client demo/data hotspots:** `apps/client/components/providers/BookingProvider.jsx`, `apps/client/app/search/_components/SearchView.jsx`, `apps/client/app/checkout/_components/CheckoutView.jsx`, `apps/client/app/account/_components/AccountView.jsx`, `apps/client/app/host/**`, `apps/client/lib/contact.js`, `packages/shared/data.js`
-- **Ops/scripts/docs:** `apps/server/scripts/migrate.js`, `seed.js`, `verify-db.js`, `create-user.js`, `.env.example`, `docs/AIVEN_SETUP.md`, `docs/postman/JosStay-Premium-API.postman_collection.json`
+- **Ops/scripts/docs:** `apps/server/scripts/migrate.js`, `seed.js`, `verify-db.js`, `create-user.js`, `import-listings.js`, `.env.example`, `docs/AIVEN_SETUP.md`, `docs/LISTINGS_IMPORT.md`, `docs/postman/JosStay-Premium-API.postman_collection.json`
 
 Use this checklist as the source of truth for go-live work; update it as decisions are made (payment provider, storage, notification channel, idempotency storage strategy, and final data model). 
