@@ -20,6 +20,8 @@ let authHandlers = {
   refreshSession: null,
 };
 
+let refreshPromise = null;
+
 export const setApiAuthHandlers = (handlers = {}) => {
   authHandlers = {
     getAccessToken:
@@ -27,6 +29,18 @@ export const setApiAuthHandlers = (handlers = {}) => {
     refreshSession:
       typeof handlers.refreshSession === "function" ? handlers.refreshSession : null,
   };
+};
+
+const refreshSessionOnce = async () => {
+  if (typeof authHandlers.refreshSession !== "function") return null;
+  if (!refreshPromise) {
+    refreshPromise = Promise.resolve()
+      .then(() => authHandlers.refreshSession())
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
 };
 
 const isJsonContentType = (contentType) => /application\/json|application\/problem\+json/i.test(contentType || "");
@@ -177,7 +191,7 @@ export async function apiRequest(path, options = {}) {
         typeof authHandlers.refreshSession === "function"
       ) {
         try {
-          const refreshed = await authHandlers.refreshSession();
+          const refreshed = await refreshSessionOnce();
           const nextToken = refreshed?.token || refreshed?.accessToken || resolveToken(null);
           if (nextToken) {
             return await apiRequest(path, { ...options, token: nextToken, _retriedAuth: true });
