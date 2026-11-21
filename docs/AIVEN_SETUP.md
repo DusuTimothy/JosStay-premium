@@ -97,6 +97,18 @@ This inserts the 10 properties, rooms, images, amenities, reviews, sample bookin
 
 To attach seeded bookings `JS-8F2K1Q` and `JS-4M7P2D` to a real guest account, create the guest first and set `SEED_GUEST_EMAIL` in `apps/server/.env`, then re-run the seed.
 
+To remove the demo catalogue again (without touching imported/real listings), use:
+
+```bash
+# preview what would be removed
+npm --workspace @josstay/server run db:clear-sample
+
+# actually delete seeded properties, their bookings, and unlinked seed hosts
+npm --workspace @josstay/server run db:clear-sample -- --yes
+```
+
+Only properties matching both the shared demo `legacy_id` and `slug` are removed. Hosts are deleted only if they are unlinked (`user_id is null`) and have no remaining properties.
+
 ---
 
 ## 6. Create the first host/admin
@@ -208,6 +220,8 @@ If `NODE_ENV=production` and PostgreSQL/JWT configuration is missing, startup fa
 | --- | --- |
 | `self-signed certificate` / TLS errors | Set `DATABASE_CA_CERT_PATH` / `REDIS_CA_CERT_PATH` to the correct Aiven CA `.pem` and keep verification enabled |
 | `password authentication failed` / connection refused | Verify Aiven service URI, credentials, port, and network access rules |
+| Intermittent `ETIMEDOUT` / `ENETUNREACH` (often with a `64:ff9b::` IPv6 address) when connecting locally | Set `DB_FORCE_IPV4=true` to force IPv4 and disable Node's dual-stack auto-selection for DB connections. Also try another network/VPN off, and confirm your IP is allowed in Aiven if IP filters are enabled. |
+| `SELF_SIGNED_CERT_IN_CHAIN` | Use the Aiven CA for the correct service/project; remove `sslmode` from `DATABASE_URL` when an explicit CA is configured |
 | `relation ... does not exist` | Run `npm --workspace @josstay/server run db:migrate` |
 | `exclusion_violation` / booking `409` | The room is already booked for those dates |
 | Startup fails with “Production must use Postgres persistence” | Set `DATA_BACKEND=postgres` and database env vars |

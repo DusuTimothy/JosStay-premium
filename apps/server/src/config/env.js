@@ -17,6 +17,7 @@ const RawEnvSchema = z.object({
   PGPASSWORD: z.string().optional().default(""),
   DATABASE_CA_CERT_PATH: z.string().optional().default(""),
   DATABASE_SSL_REJECT_UNAUTHORIZED: z.string().optional().default(""),
+  DB_FORCE_IPV4: z.string().optional().default(""),
 
   // Redis (Aiven)
   REDIS_URL: z.string().optional().default(""),
@@ -81,6 +82,7 @@ export const DATABASE_SSL_REJECT_UNAUTHORIZED = cleanBool(
   raw.DATABASE_SSL_REJECT_UNAUTHORIZED,
   true,
 );
+export const DB_FORCE_IPV4 = cleanBool(raw.DB_FORCE_IPV4, false);
 
 export const REDIS_URL = clean(raw.REDIS_URL);
 export const REDIS_CA_CERT_PATH = clean(raw.REDIS_CA_CERT_PATH);

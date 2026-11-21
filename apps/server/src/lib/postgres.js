@@ -1,10 +1,13 @@
+import dns from "node:dns";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import pg from "pg";
 import {
   DATABASE_CA_CERT_PATH,
   DATABASE_SSL_REJECT_UNAUTHORIZED,
   DATABASE_URL,
+  DB_FORCE_IPV4,
   HAS_DATABASE_CONFIG,
   IS_PRODUCTION,
   PGDATABASE,
@@ -16,6 +19,16 @@ import {
 } from "../config/env.js";
 
 const { Pool } = pg;
+
+// Some networks (e.g. IPv6/NAT64-only paths) make Node try an unreachable
+// IPv6 address before falling back, which can surface as intermittent
+// ETIMEDOUT/ENETUNREACH when connecting to Aiven. Opt-in IPv4 forcing fixes it.
+if (DB_FORCE_IPV4) {
+  dns.setDefaultResultOrder("ipv4first");
+  if (typeof net.setDefaultAutoSelectFamily === "function") {
+    net.setDefaultAutoSelectFamily(false);
+  }
+}
 
 export const isDatabaseEnabled = USES_DATABASE;
 

@@ -9,6 +9,7 @@
     "start": "node src/index.js",
     "db:migrate": "node scripts/migrate.js",
     "db:seed": "node scripts/seed.js",
+    "db:clear-sample": "node scripts/clear-sample-data.js",
     "db:create-user": "node scripts/create-user.js",
     "db:import-listings": "node scripts/import-listings.js",
     "db:verify": "node scripts/verify-db.js"

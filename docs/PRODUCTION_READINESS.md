@@ -191,6 +191,6 @@ Step-by-step checklist for taking **JosStay Premium** from demo/prototype to a l
 - **Data/access:** `apps/server/src/lib/postgres.js`, `apps/server/src/lib/redis.js`, `apps/server/src/store/*`, `db/migrations/*`
 - **API surface:** `apps/server/src/routes/*`, `apps/server/src/controllers/*`, `apps/server/src/middleware/*`, `apps/server/src/validators/*`
 - **Client demo/data hotspots:** `apps/client/components/providers/BookingProvider.jsx`, `apps/client/app/search/_components/SearchView.jsx`, `apps/client/app/checkout/_components/CheckoutView.jsx`, `apps/client/app/account/_components/AccountView.jsx`, `apps/client/app/host/**`, `apps/client/lib/contact.js`, `packages/shared/data.js`
-- **Ops/scripts/docs:** `apps/server/scripts/migrate.js`, `seed.js`, `verify-db.js`, `create-user.js`, `import-listings.js`, `.env.example`, `docs/AIVEN_SETUP.md`, `docs/LISTINGS_IMPORT.md`, `docs/postman/JosStay-Premium-API.postman_collection.json`
+- **Ops/scripts/docs:** `apps/server/scripts/migrate.js`, `seed.js`, `clear-sample-data.js`, `verify-db.js`, `create-user.js`, `import-listings.js`, `.env.example`, `docs/AIVEN_SETUP.md`, `docs/LISTINGS_IMPORT.md`, `docs/postman/JosStay-Premium-API.postman_collection.json`
 
 Use this checklist as the source of truth for go-live work; update it as decisions are made (payment provider, storage, notification channel, idempotency storage strategy, and final data model). 
