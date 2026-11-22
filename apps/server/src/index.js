@@ -14,6 +14,7 @@ import {
   closeRedis,
   connectRedis,
 } from "./lib/db.js";
+import { expireStalePendingBookings } from "./store/bookingStore.js";
 
 const start = async () => {
   if (USES_DATABASE) {
@@ -53,8 +54,30 @@ const start = async () => {
     }
   });
 
+  const runExpirySweep = async (reason) => {
+    try {
+      const count = await expireStalePendingBookings();
+      if (count > 0) {
+        console.info(`[bookings] Expiry sweep (${reason}) expired ${count} reservation(s)`);
+      }
+    } catch (error) {
+      console.warn(
+        `[bookings] Expiry sweep (${reason}) failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  };
+
+  void runExpirySweep("startup");
+  const expiryInterval = setInterval(() => {
+    void runExpirySweep("interval");
+  }, 5 * 60 * 1000);
+  expiryInterval.unref?.();
+
   const shutdown = async (signal) => {
     console.log(`[shutdown] ${signal} received, closing server`);
+    clearInterval(expiryInterval);
     server.close(async () => {
       await Promise.allSettled([closeDatabase(), closeRedis()]);
       process.exit(0);

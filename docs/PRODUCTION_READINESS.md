@@ -76,7 +76,8 @@ Step-by-step checklist for taking **JosStay Premium** from demo/prototype to a l
 - [ ] Verify webhook signatures, authenticate webhook sources, and process events idempotently (see Phase 3).
 - [ ] Validate and constrain uploads (type, size, filename/content checks), store in secure object storage/CDN, and authorize access to private documents.
 - [ ] Log security-relevant events (auth failures, permission denials, payment/booking state changes) without PII/secrets; add alerting/monitoring.
-- **Implemented in code (verify in production):** Paystack server-side initialize/verify/webhook routes, signature verification, amount/reference checks, idempotency-key handling for booking/payment-init paths, webhook event dedupe storage, booking/payment state reconciliation helpers, Cloudinary server-side upload signature/config endpoints, and Brevo transactional email service hooks (safe no-op when unconfigured). Live provider credentials, webhook delivery, signed browser uploads, and end-to-end notification delivery still require configuration and validation.
+- [ ] Define and test a **refund runbook** for money-captured edge cases: duplicate successful charge for same booking, successful charge after reservation expiry/cancel when dates are no longer available, amount mismatch, and Paystack/provider reconciliation. Do not silently swallow these events.
+- **Implemented in code (verify in production):** Paystack server-side initialize/verify/webhook routes, signature verification, amount/reference checks, idempotency-key handling for booking/payment-init paths, webhook event dedupe storage, booking/payment state reconciliation helpers, reusable active checkout links, expired-booking reactivation when dates are still available, refund-review flags/logs for duplicate/late/amount-mismatch charges, Cloudinary server-side upload signature/config endpoints, and Brevo transactional email service hooks (safe no-op when unconfigured). Live provider credentials, webhook delivery, signed browser uploads, real refund operations, and end-to-end notification delivery still require configuration and validation.
 
 ### 1.5 Dependency and code hygiene
 - [ ] Run dependency audit/update process; pin/review critical packages.
@@ -174,6 +175,7 @@ Step-by-step checklist for taking **JosStay Premium** from demo/prototype to a l
 - [ ] **Catalogue/search:** real data rendered, filters/pagination/map behave correctly, no bundled sample dependency in production path.
 - [ ] **Booking flow:** availability check, server-priced quote, payment success/failure/cancel, confirmation, booking visible in account/host views.
 - [ ] **Idempotency/retries:** double-click submit, client retry/timeout, and webhook replay do not create duplicates or inconsistent state.
+- [ ] **Payment money-safety:** duplicate successful charge, success after unpaid reservation expiry (room available and room unavailable), amount mismatch, malformed/invalid webhook, and unauthorized verify/cancel are handled with no silent money loss and clear refund-review logs.
 - [ ] **Host/admin:** real listing/content/user/payment operations as applicable.
 - [ ] **Negative/security checks:** unauthorized access blocked, CORS enforced, rate limits effective, invalid inputs rejected.
 

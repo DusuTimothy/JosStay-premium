@@ -74,10 +74,9 @@ const expireStaleDemoBookings = ({ reference } = {}) => {
   return count;
 };
 
-const expireStalePendingBookings = async ({ reference } = {}) => {
+export const expireStalePendingBookings = async ({ reference } = {}) => {
   if (!isDatabaseEnabled) {
-    expireStaleDemoBookings({ reference });
-    return;
+    return expireStaleDemoBookings({ reference });
   }
   try {
     const params = [PENDING_PAYMENT_TTL_MINUTES];
@@ -86,7 +85,7 @@ const expireStalePendingBookings = async ({ reference } = {}) => {
       params.push(reference);
       whereRef = ` and b.reference = $${params.length}`;
     }
-    await query(
+    const result = await query(
       `update public.bookings b
        set status = 'cancelled'::public.booking_status,
            cancelled_at = coalesce(b.cancelled_at, now()),
@@ -98,8 +97,82 @@ const expireStalePendingBookings = async ({ reference } = {}) => {
          ${whereRef}`,
       params,
     );
+    if (result.rowCount > 0) {
+      console.info(`[bookings] Expired ${result.rowCount} unpaid reservation(s)`);
+    }
+    return result.rowCount;
   } catch {
     // Best-effort expiry; core request paths should continue.
+    return 0;
+  }
+};
+
+/**
+ * Reuse an existing Paystack transaction instead of creating a second payable
+ * checkout link for the same booking. Paystack cannot cancel an initialized
+ * transaction, so a booking must only ever expose one active link.
+ */
+export const findReusablePaymentForBooking = async (
+  bookingId,
+  { maxAgeMinutes = PENDING_PAYMENT_TTL_MINUTES } = {},
+) => {
+  if (!isDatabaseEnabled || !bookingId) return null;
+  const { rows } = await query(
+    `select reference, amount, currency, authorization_url, access_code,
+            customer_email, initialized_at
+     from public.payments
+     where booking_id = $1::uuid
+       and provider = 'paystack'
+       and status = 'initialized'
+       and authorization_url is not null
+       and initialized_at is not null
+       and initialized_at > (now() - ($2::int * interval '1 minute'))
+     order by initialized_at desc
+     limit 1`,
+    [bookingId, maxAgeMinutes],
+  );
+  return rows[0] || null;
+};
+
+/**
+ * A payment can succeed after the unpaid reservation was auto-expired.
+ * If the room is still free, reactivate the booking. The DB exclusion
+ * constraint rejects the update when another stay now overlaps, in which
+ * case the caller must flag the charge for refund.
+ */
+export const reactivateExpiredBooking = async ({
+  bookingId,
+  paymentReference,
+  paymentProvider = "paystack",
+  paidAt,
+}) => {
+  if (!isDatabaseEnabled) return { ok: false, reason: "not_expired" };
+  try {
+    const updated = await query(
+      `update public.bookings
+       set status = 'upcoming'::public.booking_status,
+           cancelled_at = null,
+           payment_status = 'paid'::public.payment_status,
+           payment_reference = $2,
+           payment_provider = $3,
+           paid_at = $4::timestamptz
+       where id = $1::uuid
+         and status = 'cancelled'
+         and payment_status = 'abandoned'
+       returning id`,
+      [bookingId, paymentReference, paymentProvider, paidAt || new Date().toISOString()],
+    );
+    if (!updated.rows[0]) return { ok: false, reason: "not_expired" };
+
+    const { rows } = await query(
+      `${BOOKING_SELECT_SQL} where b.id = $1::uuid limit 1`,
+      [updated.rows[0].id],
+    );
+    return { ok: true, booking: mapBookingRow(rows[0], { includeInternal: true }) };
+  } catch (error) {
+    if (error?.code === "23P01") return { ok: false, reason: "stay_no_longer_available" };
+    if (error?.code === "23505") return { ok: false, reason: "payment_reference_conflict" };
+    throw new HttpError(503, "Could not reactivate booking after payment");
   }
 };
 

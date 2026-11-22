@@ -32,6 +32,7 @@ export function ConfirmationView() {
   const [retryingPayment, setRetryingPayment] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [paymentNotice, setPaymentNotice] = useState(null);
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -55,7 +56,20 @@ export function ConfirmationView() {
         if (paymentRef) {
           setVerifying(true);
           try {
-            await api.get(`/api/payments/paystack/verify?reference=${encodeURIComponent(paymentRef)}`, { cache: "no-store" });
+            const verifyRes = await api.get(
+              `/api/payments/paystack/verify?reference=${encodeURIComponent(paymentRef)}`,
+              { cache: "no-store" },
+            );
+            const payment = verifyRes?.data?.payment;
+            if (active && payment?.requiresRefund) {
+              setPaymentNotice({
+                tone: "warning",
+                title: "Payment received — refund review required",
+                description:
+                  "Your payment was received by Paystack, but this booking could not be confirmed automatically. Support will review the charge and arrange a refund if needed. Keep your booking reference and payment reference handy.",
+                reference: payment.reference,
+              });
+            }
           } catch {
             // Verification may be handled by webhook or retried; continue to load booking state.
           } finally {
@@ -150,12 +164,28 @@ export function ConfirmationView() {
 
           if (inlineResult?.status === "success") {
             const paidRef = inlineResult?.response?.reference || payment.reference;
+            let verifyPayment = null;
             try {
-              await api.get(`/api/payments/paystack/verify?reference=${encodeURIComponent(paidRef)}`, { cache: "no-store" });
+              const verifyRes = await api.get(
+                `/api/payments/paystack/verify?reference=${encodeURIComponent(paidRef)}`,
+                { cache: "no-store" },
+              );
+              verifyPayment = verifyRes?.data?.payment || null;
             } catch {}
             const refreshed = await fetchBooking(booking.reference, { cache: "no-store" }).catch(() => null);
             if (refreshed) setBooking(refreshed);
-            toast("Payment received. Confirming your booking…", "success");
+            if (verifyPayment?.requiresRefund) {
+              setPaymentNotice({
+                tone: "warning",
+                title: "Payment received — refund review required",
+                description:
+                  "Your payment was received, but the booking could not be confirmed automatically. Support will review the charge and arrange a refund if needed.",
+                reference: paidRef,
+              });
+              toast("Payment received. Support review is required.", "info");
+            } else {
+              toast("Payment received. Confirming your booking…", "success");
+            }
             router.replace(`/confirmation/${encodeURIComponent(booking.reference)}?reference=${encodeURIComponent(paidRef)}`);
             return;
           }
@@ -248,6 +278,7 @@ export function ConfirmationView() {
   const isFailedPayment = booking.paymentStatus === "failed";
   const isPendingPayment = !isPaid && ["pending", "initialized", "abandoned", undefined, null].includes(booking.paymentStatus) && booking.status !== "cancelled";
   const canRetryPayment = !isPaid && !["cancelled", "completed", "no_show"].includes(booking.status) && booking.paymentStatus !== "paid";
+  const showRefundNotice = Boolean(paymentNotice?.requiresRefund || (paymentNotice && booking.status === "cancelled"));
 
   const rows = [
     { label: "Reference", value: booking.reference, mono: true },
@@ -304,6 +335,16 @@ export function ConfirmationView() {
               {retryingPayment ? "Starting payment…" : isFailedPayment ? "Try payment again" : "Complete payment"}
             </Button>
             <p className="text-[11px] text-muted">Secure payment powered by Paystack. Your booking total is confirmed by the server.</p>
+          </div>
+        )}
+
+        {paymentNotice && (
+          <div className={`mx-auto mt-6 max-w-2xl rounded-xl border p-4 text-left ${showRefundNotice ? "border-amber-200 bg-amber-50" : "border-line bg-white"}`}>
+            <p className={`text-[11px] font-bold uppercase tracking-[0.14em] ${showRefundNotice ? "text-amber-700" : "text-muted"}`}>{paymentNotice.title}</p>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-ink">{paymentNotice.description}</p>
+            {paymentNotice.reference ? (
+              <p className="mt-2 text-[11px] text-muted">Payment reference: <span className="font-mono font-semibold text-ink">{paymentNotice.reference}</span></p>
+            ) : null}
           </div>
         )}
       </div>

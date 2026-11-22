@@ -8,7 +8,11 @@ import {
   verifyPaystackWebhookSignature,
 } from "../lib/paystack.js";
 import { sendBookingConfirmationEmail } from "../lib/notifications.js";
-import { findBookingByReference, markBookingPaymentByReference } from "../store/bookingStore.js";
+import {
+  findBookingByReference,
+  markBookingPaymentByReference,
+  reactivateExpiredBooking,
+} from "../store/bookingStore.js";
 
 const sampleData = DATA_BACKEND === "demo";
 
@@ -33,6 +37,30 @@ const recordWebhookEvent = async ({ provider, eventKey, eventType, reference, pa
     [provider, eventKey, eventType || null, reference || null, JSON.stringify(payload || {})],
   );
   return { recorded: result.rowCount === 1, duplicate: result.rowCount === 0 };
+};
+
+const deleteWebhookEvent = async ({ provider, eventKey }) => {
+  if (!isDatabaseEnabled) return;
+  try {
+    await query(
+      `delete from public.payment_webhook_events where provider = $1 and event_key = $2`,
+      [provider, eventKey],
+    );
+  } catch (error) {
+    console.error("[payments] Failed to clear webhook event for retry", {
+      provider,
+      eventKey,
+      message: error?.message,
+    });
+  }
+};
+
+const logPaymentEvent = (level, event, details = {}) => {
+  const payload = { event, ...details, at: new Date().toISOString() };
+  const line = JSON.stringify(payload);
+  if (level === "error") console.error(line);
+  else if (level === "warn") console.warn(line);
+  else console.info(line);
 };
 
 const upsertPaymentRecord = async ({
@@ -120,21 +148,159 @@ const confirmSuccessfulPayment = async ({
     throw new HttpError(404, "Booking not found for payment");
   }
 
-  if (["cancelled", "completed", "no_show"].includes(booking.status)) {
-    throw new HttpError(409, "Booking is not payable in its current state");
-  }
-
+  const paymentAmount = Math.round((Number(amountKobo) || 0) / 100);
+  const paidAtValue = paidAt || new Date().toISOString();
   const expectedKobo = Math.round(Number(booking.total || 0) * 100);
+
+  const recordReviewPayment = async ({
+    status = "paid",
+    requiresRefund = false,
+    refundReason = null,
+    amount = paymentAmount || booking.total || 0,
+  }) => {
+    await upsertPaymentRecord({
+      provider,
+      bookingId: booking.id || null,
+      bookingReference,
+      reference: paymentReference,
+      amount,
+      currency: booking.currency || "NGN",
+      status,
+      channel: channel || null,
+      customerEmail: booking.guest?.email || null,
+      metadata: {
+        bookingReference,
+        ...(requiresRefund ? { requiresRefund: true, refundReason } : {}),
+      },
+      paidAt: status === "paid" ? paidAtValue : null,
+      rawVerify: rawVerify || {},
+      lastEvent: rawEvent || {},
+    });
+  };
+
+  // Amount mismatch: record the provider charge for review/refund. Do not mark booking paid.
   if (expectedKobo > 0 && Number.isFinite(amountKobo) && amountKobo !== expectedKobo) {
+    await recordReviewPayment({
+      status: "paid",
+      requiresRefund: true,
+      refundReason: "amount_mismatch",
+      amount: paymentAmount,
+    }).catch((error) => {
+      logPaymentEvent("error", "payment.amount_mismatch_record_failed", {
+        provider,
+        bookingReference,
+        paymentReference,
+        amountKobo,
+        expectedKobo,
+        message: error?.message,
+      });
+    });
+    logPaymentEvent("error", "payment.amount_mismatch", {
+      provider,
+      bookingReference,
+      paymentReference,
+      amountKobo,
+      expectedKobo,
+    });
     throw new HttpError(409, "Payment amount does not match booking total");
   }
 
-  // Idempotent success: if already paid for this booking, require same reference/provider context.
+  // Already-paid booking: idempotent when same reference, but record different
+  // successful references as paid-for-review so money capture is never invisible.
   if (booking.paymentStatus === "paid") {
     if (booking.paymentReference && paymentReference && booking.paymentReference !== paymentReference) {
-      throw new HttpError(409, "Booking is already paid with a different payment reference");
+      await recordReviewPayment({
+        status: "paid",
+        requiresRefund: true,
+        refundReason: "duplicate_successful_charge",
+      }).catch((error) => {
+        logPaymentEvent("error", "payment.duplicate_record_failed", {
+          provider,
+          bookingReference,
+          paymentReference,
+          message: error?.message,
+        });
+      });
+      logPaymentEvent("error", "payment.duplicate_successful_charge", {
+        provider,
+        bookingReference,
+        paymentReference,
+        existingPaymentReference: booking.paymentReference,
+        amountKobo,
+      });
+      return {
+        booking,
+        outcome: "duplicate_paid",
+        requiresRefund: true,
+        refundReason: "duplicate_successful_charge",
+      };
     }
-    return booking;
+    return { booking, outcome: "already_paid", requiresRefund: false };
+  }
+
+  // A successful charge arrived after the unpaid reservation expired/cancelled.
+  // Reactivate only if the room is still available; otherwise flag for refund.
+  if (["cancelled", "completed", "no_show"].includes(booking.status)) {
+    if (booking.status === "cancelled" && booking.paymentStatus === "abandoned") {
+      await recordReviewPayment({ status: "paid" }).catch(() => {});
+      const reactivated = await reactivateExpiredBooking({
+        bookingId: booking.id,
+        paymentReference,
+        paymentProvider: provider,
+        paidAt: paidAtValue,
+      });
+
+      if (reactivated.ok) {
+        logPaymentEvent("warn", "payment.reactivated_expired_booking", {
+          provider,
+          bookingReference,
+          paymentReference,
+          amountKobo,
+        });
+        try {
+          await sendBookingConfirmationEmail(reactivated.booking);
+        } catch {}
+        return { booking: reactivated.booking, outcome: "reactivated", requiresRefund: false };
+      }
+
+      await recordReviewPayment({
+        status: "paid",
+        requiresRefund: true,
+        refundReason: reactivated.reason || "stay_no_longer_available",
+      }).catch(() => {});
+      logPaymentEvent("error", "payment.late_success_requires_refund", {
+        provider,
+        bookingReference,
+        paymentReference,
+        amountKobo,
+        reason: reactivated.reason,
+      });
+      return {
+        booking,
+        outcome: "late_payment_requires_refund",
+        requiresRefund: true,
+        refundReason: reactivated.reason || "stay_no_longer_available",
+      };
+    }
+
+    await recordReviewPayment({
+      status: "paid",
+      requiresRefund: true,
+      refundReason: `booking_${booking.status}`,
+    }).catch(() => {});
+    logPaymentEvent("error", "payment.success_for_unpayable_booking", {
+      provider,
+      bookingReference,
+      paymentReference,
+      bookingStatus: booking.status,
+      amountKobo,
+    });
+    return {
+      booking,
+      outcome: "unpayable_requires_refund",
+      requiresRefund: true,
+      refundReason: `booking_${booking.status}`,
+    };
   }
 
   await upsertPaymentRecord({
@@ -142,13 +308,13 @@ const confirmSuccessfulPayment = async ({
     bookingId: booking.id || null,
     bookingReference,
     reference: paymentReference,
-    amount: booking.total || Math.round((amountKobo || 0) / 100),
+    amount: booking.total || paymentAmount,
     currency: booking.currency || "NGN",
     status: "paid",
     channel: channel || null,
     customerEmail: booking.guest?.email || null,
     metadata: { bookingReference },
-    paidAt: paidAt || new Date().toISOString(),
+    paidAt: paidAtValue,
     rawVerify: rawVerify || {},
     lastEvent: rawEvent || {},
   });
@@ -158,16 +324,22 @@ const confirmSuccessfulPayment = async ({
     paymentStatus: "paid",
     paymentReference,
     paymentProvider: provider,
-    paidAt: paidAt || new Date().toISOString(),
+    paidAt: paidAtValue,
     bookingStatus: "upcoming",
   });
 
-  // Best-effort confirmation notification for first successful payment.
+  logPaymentEvent("info", "payment.confirmed", {
+    provider,
+    bookingReference,
+    paymentReference,
+    amountKobo,
+  });
+
   try {
     await sendBookingConfirmationEmail(updated || booking);
   } catch {}
 
-  return updated;
+  return { booking: updated, outcome: "paid", requiresRefund: false };
 };
 
 export const verifyPaystackPayment = asyncHandler(async (req, res) => {
@@ -191,7 +363,7 @@ export const verifyPaystackPayment = asyncHandler(async (req, res) => {
   }
 
   if (status === "success") {
-    const updated = await confirmSuccessfulPayment({
+    const result = await confirmSuccessfulPayment({
       provider: "paystack",
       paymentReference: reference,
       bookingReference,
@@ -201,7 +373,20 @@ export const verifyPaystackPayment = asyncHandler(async (req, res) => {
       rawVerify: transaction,
     });
 
-    return res.json({ data: { booking: updated, payment: { reference, status: "paid", provider: "paystack" } }, sampleData });
+    return res.json({
+      data: {
+        booking: result.booking,
+        payment: {
+          reference,
+          status: result.booking?.paymentStatus === "paid" ? "paid" : "review",
+          provider: "paystack",
+          requiresRefund: Boolean(result.requiresRefund),
+          refundReason: result.refundReason || null,
+          outcome: result.outcome,
+        },
+      },
+      sampleData,
+    });
   }
 
   // Non-success: record state but do not confirm booking or regress a paid booking.
@@ -257,7 +442,7 @@ export const handlePaystackWebhook = asyncHandler(async (req, res) => {
 
   if (eventType === "charge.success" && reference && bookingReference) {
     try {
-      await confirmSuccessfulPayment({
+      const result = await confirmSuccessfulPayment({
         provider: "paystack",
         paymentReference: reference,
         bookingReference,
@@ -266,10 +451,30 @@ export const handlePaystackWebhook = asyncHandler(async (req, res) => {
         paidAt: data.paid_at || null,
         rawEvent: event,
       });
+      if (result?.requiresRefund) {
+        logPaymentEvent("error", "payment.webhook_requires_refund_review", {
+          provider: "paystack",
+          eventKey,
+          bookingReference,
+          paymentReference: reference,
+          outcome: result.outcome,
+          refundReason: result.refundReason,
+        });
+      }
     } catch (error) {
-      // Acknowledge signature-valid webhook to avoid endless retries for business conflicts;
-      // operational errors should be surfaced via logs/monitoring.
-      if (!(error instanceof HttpError)) {
+      if (error instanceof HttpError) {
+        logPaymentEvent("warn", "payment.webhook_business_conflict", {
+          provider: "paystack",
+          eventKey,
+          eventType,
+          bookingReference,
+          paymentReference: reference,
+          status: error.status,
+          message: error.message,
+        });
+      } else {
+        // Allow Paystack to retry unexpected operational failures.
+        await deleteWebhookEvent({ provider: "paystack", eventKey });
         throw error;
       }
     }

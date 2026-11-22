@@ -13,6 +13,7 @@ import { isDatabaseEnabled, query } from "../lib/postgres.js";
 import {
   cancelBookingRecord,
   createBookingRecord,
+  findReusablePaymentForBooking,
   getBookingRecord,
   listBookingRecords,
   markBookingPaymentByReference,
@@ -294,6 +295,47 @@ export const initializeBookingPayment = asyncHandler(async (req, res) => {
   }
 
   try {
+    if (booking.paymentStatus === "paid") {
+      throw new HttpError(409, "Booking is already paid");
+    }
+
+    // Reuse an existing active Paystack transaction to avoid creating multiple
+    // payable checkout links for the same booking.
+    const reusable = await findReusablePaymentForBooking(booking.id);
+    if (reusable?.reference) {
+      const updatedBooking =
+        (await markBookingPaymentByReference({
+          bookingReference: booking.reference,
+          paymentStatus: "initialized",
+          paymentReference: reusable.reference,
+          paymentProvider: "paystack",
+          bookingStatus: booking.status === "confirmed" ? "confirmed" : "upcoming",
+        })) || booking;
+
+      const payment = {
+        provider: "paystack",
+        reference: reusable.reference,
+        status: "initialized",
+        authorizationUrl: reusable.authorization_url || null,
+        accessCode: reusable.access_code || null,
+        amount: updatedBooking?.total ?? booking.total,
+        amountKobo: toKobo(updatedBooking?.total ?? booking.total),
+        currency: updatedBooking?.currency || booking.currency || "NGN",
+        email:
+          updatedBooking?.guest?.email ||
+          reusable.customer_email ||
+          booking.guest?.email ||
+          null,
+        reused: true,
+      };
+
+      const responseBody = { data: { booking: updatedBooking, payment }, sampleData };
+      if (idem.type === "claimed") {
+        await completeIdempotency({ scope, key: idempotencyKey, status: 200, body: responseBody });
+      }
+      return res.json(responseBody);
+    }
+
     const paymentReference = buildPaymentReference(booking.reference);
     const callbackBase = resolveCallbackBaseUrl();
     const callbackUrl = callbackBase
