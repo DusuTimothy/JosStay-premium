@@ -151,7 +151,10 @@ export const createOrLinkGoogleUser = async ({ email, name, googleSub }) => {
 
   if (!isDatabaseEnabled) {
     const bySub = users.find((user) => user.googleSub === googleSub);
-    if (bySub) return publicUser(bySub);
+    if (bySub) {
+      bySub.emailVerified = true;
+      return publicUser(bySub);
+    }
     const byEmail = users.find((user) => user.email === normalized);
     if (byEmail) {
       byEmail.googleSub = byEmail.googleSub || googleSub;
@@ -180,7 +183,20 @@ export const createOrLinkGoogleUser = async ({ email, name, googleSub }) => {
       `select id, email, full_name, role, email_verified from public.profiles where google_sub = $1 limit 1`,
       [googleSub],
     );
-    if (bySub.rows[0]) return mapProfile(bySub.rows[0]);
+    if (bySub.rows[0]) {
+      const existing = bySub.rows[0];
+      if (existing.email_verified) return mapProfile(existing);
+      const verified = await query(
+        `update public.profiles
+         set email_verified = true,
+             email_verified_at = coalesce(email_verified_at, now()),
+             updated_at = now()
+         where id = $1
+         returning id, email, full_name, role, email_verified`,
+        [existing.id],
+      );
+      return mapProfile(verified.rows[0] || existing);
+    }
 
     const byEmail = await query(
       `select id, email, full_name, role, google_sub, email_verified from public.profiles where lower(email) = lower($1) limit 1`,
