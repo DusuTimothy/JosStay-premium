@@ -112,12 +112,12 @@ export const register = asyncHandler(async (req, res) => {
     });
   }
 
-  return issueAuthResponse({
-    req,
-    res,
-    user,
-    status: 201,
-    message: "Account created. Please verify your email address.",
+  return res.status(201).json({
+    message: "Account created. Please verify your email address before signing in.",
+    data: {
+      user: publicUser(user),
+      requiresEmailVerification: true,
+    },
   });
 });
 
@@ -136,6 +136,13 @@ export const login = asyncHandler(async (req, res) => {
     throw new HttpError(401, "Invalid email or password");
   }
 
+  if (!user.emailVerified) {
+    throw new HttpError(403, "Please verify your email address before signing in.", {
+      code: "EMAIL_NOT_VERIFIED",
+      email: user.email,
+    });
+  }
+
   await touchLastLogin(user.id);
 
   return issueAuthResponse({ req, res, user });
@@ -152,6 +159,14 @@ export const refresh = asyncHandler(async (req, res) => {
   if (!user) {
     clearRefreshCookie(res);
     throw new HttpError(401, "Account no longer exists");
+  }
+
+  if (!user.emailVerified) {
+    await revokeRefreshSession(token);
+    clearRefreshCookie(res);
+    throw new HttpError(403, "Please verify your email address before signing in.", {
+      code: "EMAIL_NOT_VERIFIED",
+    });
   }
 
   setRefreshCookie(res, session.token, session.expiresAt);

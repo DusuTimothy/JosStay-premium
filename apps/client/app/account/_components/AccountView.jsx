@@ -37,6 +37,8 @@ export function AccountView() {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
+  const [formNotice, setFormNotice] = useState("");
+  const [unverifiedEmail, setUnverifiedEmail] = useState("");
   const [googleReady, setGoogleReady] = useState(false);
   const [googleError, setGoogleError] = useState("");
   const googleButtonRef = useRef(null);
@@ -46,6 +48,8 @@ export function AccountView() {
     setMode(nextMode);
     setErrors({});
     setFormError("");
+    setFormNotice("");
+    setUnverifiedEmail("");
   };
 
   useEffect(() => {
@@ -146,25 +150,42 @@ export function AccountView() {
 
     setErrors(next);
     setFormError("");
+    setFormNotice("");
+    setUnverifiedEmail("");
     if (Object.keys(next).length) return;
 
     setSubmitting(true);
     try {
       if (mode === "signup") {
-        await auth.register({ name: trimmedName, email: trimmedEmail, password });
-        toast("Account created. Check your email to verify your address.", "success");
+        const result = await auth.register({ name: trimmedName, email: trimmedEmail, password });
+        if (result?.requiresEmailVerification) {
+          setMode("signin");
+          setPassword("");
+          setFormNotice("Account created. Check your email for a verification link before signing in.");
+          toast("Account created. Verify your email before signing in.", "success");
+        } else {
+          toast("Account created. Welcome to JosStay.", "success");
+        }
       } else {
         await auth.login({ email: trimmedEmail, password });
         toast("Signed in to your JosStay account", "success");
       }
       setPassword("");
     } catch (error) {
-      const message = getErrorMessage(
-        error,
-        mode === "signup" ? "Could not create your account" : "Could not sign you in",
-      );
-      setFormError(message);
-      toast(message, "error");
+      const code = error?.data?.details?.code || error?.data?.code;
+      if (code === "EMAIL_NOT_VERIFIED") {
+        const targetEmail = error?.data?.details?.email || trimmedEmail;
+        setUnverifiedEmail(targetEmail);
+        setFormError("Please verify your email address before signing in.");
+        toast("Verify your email before signing in.", "error");
+      } else {
+        const message = getErrorMessage(
+          error,
+          mode === "signup" ? "Could not create your account" : "Could not sign you in",
+        );
+        setFormError(message);
+        toast(message, "error");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -180,6 +201,8 @@ export function AccountView() {
       setPassword("");
       setErrors({});
       setFormError("");
+      setFormNotice("");
+      setUnverifiedEmail("");
       toast("Signed out", "default");
     } finally {
       setSubmitting(false);
@@ -331,9 +354,36 @@ export function AccountView() {
                   </div>
                 ) : null}
 
+                {formNotice && !formError && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-[12px] text-amber-900" role="status">
+                    {formNotice}
+                  </div>
+                )}
+
                 {formError && (
                   <div className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-3 text-[12px] text-red-700" role="alert">
-                    {formError}
+                    <p>{formError}</p>
+                    {unverifiedEmail && (
+                      <button
+                        type="button"
+                        className="mt-2 font-semibold underline decoration-red-300 underline-offset-4 disabled:opacity-60"
+                        disabled={submitting}
+                        onClick={async () => {
+                          if (submitting) return;
+                          setSubmitting(true);
+                          try {
+                            await auth.requestEmailVerification(unverifiedEmail);
+                            toast("If your account needs verification, we sent a new link.", "success");
+                          } catch (resendError) {
+                            toast(getErrorMessage(resendError, "Could not send verification email"), "error");
+                          } finally {
+                            setSubmitting(false);
+                          }
+                        }}
+                      >
+                        Resend verification email
+                      </button>
+                    )}
                   </div>
                 )}
 

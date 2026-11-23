@@ -72,8 +72,12 @@ export function AuthProvider({ children }) {
 
   const register = useCallback(async ({ name, email, password }) => {
     const res = await api.post("/api/auth/register", { name, email, password });
+    if (res?.data?.requiresEmailVerification) {
+      clearSession();
+      return { ...res.data, requiresEmailVerification: true };
+    }
     return applySession(res?.data);
-  }, [applySession]);
+  }, [applySession, clearSession]);
 
   const loginWithGoogle = useCallback(async ({ credential }) => {
     const res = await api.post("/api/auth/google", { credential });
