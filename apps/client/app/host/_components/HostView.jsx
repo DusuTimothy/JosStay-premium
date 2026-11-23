@@ -10,6 +10,7 @@ import { PasswordField } from "@/components/ui/PasswordField";
 import { SearchSelect } from "@/components/shared/SearchSelect";
 import { useAuth, useCurrency, useToast } from "@/components/providers";
 import { api } from "@/lib/api";
+import { isValidNgPhone, normalizeNgPhone } from "@/lib/phone";
 
 const SIGNUP_MIN_PASSWORD_LENGTH = 8;
 
@@ -60,7 +61,7 @@ export function HostView() {
 
     const next = {};
     if (!form.name.trim()) next.name = "Enter your full name";
-    if (form.phone.replace(/\D/g, "").length < 10) next.phone = "Enter a valid phone number";
+    if (!isValidNgPhone(form.phone)) next.phone = "Enter a valid phone number";
 
     const isAuthed = auth.isAuthenticated;
     if (!isAuthed) {
@@ -79,7 +80,7 @@ export function HostView() {
       if (isAuthed) {
         await api.post("/api/host/onboard", {
           name: form.name.trim(),
-          phone: form.phone.trim(),
+          phone: normalizeNgPhone(form.phone),
           type: form.type,
           area: form.area,
         });
@@ -92,7 +93,7 @@ export function HostView() {
           name: form.name.trim(),
           email: form.email.trim().toLowerCase(),
           password,
-          phone: form.phone.trim(),
+          phone: normalizeNgPhone(form.phone),
           type: form.type,
           area: form.area,
         });
@@ -177,7 +178,8 @@ export function HostView() {
 
               <label className="block">
                 <span className="label">Phone number</span>
-                <input type="tel" value={form.phone} onChange={(e) => { setForm((f) => ({ ...f, phone: e.target.value })); setErrors((er) => ({ ...er, phone: undefined, form: undefined })); }} className={`field ${errors.phone ? "!border-red-400" : ""}`} placeholder="+234 800 000 0000" />
+                <input type="tel" value={form.phone} onChange={(e) => { setForm((f) => ({ ...f, phone: e.target.value })); setErrors((er) => ({ ...er, phone: undefined, form: undefined })); }} className={`field ${errors.phone ? "!border-red-400" : ""}`} placeholder="0801 234 5678" autoComplete="tel" />
+                {!errors.phone && <span className="mt-1 block text-[11px] text-muted">Enter your Nigerian number — we’ll add +234 automatically.</span>}
                 {errors.phone && <span className="mt-1 block text-[11px] text-red-600">{errors.phone}</span>}
               </label>
 

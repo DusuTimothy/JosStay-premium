@@ -11,6 +11,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useAuth, useBooking, useCurrency, useToast } from "@/components/providers";
 import { api } from "@/lib/api";
 import { openPaystackInline } from "@/lib/paystackInline";
+import { isValidNgPhone, normalizeNgPhone } from "@/lib/phone";
 import { EmptyState, ErrorState, LoadingResults } from "@/components/shared/states";
 
 const PAYMENT_METHODS = [
@@ -151,7 +152,7 @@ export function CheckoutView() {
     if (!form.firstName.trim()) next.firstName = "First name is required";
     if (!form.lastName.trim()) next.lastName = "Last name is required";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email.trim())) next.email = "Enter a valid email address";
-    if (form.phone.replace(/\D/g, "").length < 10) next.phone = "Enter a valid phone number";
+    if (!isValidNgPhone(form.phone)) next.phone = "Enter a valid phone number";
     if (!form.terms) next.terms = "Please accept the booking terms";
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -185,7 +186,7 @@ export function CheckoutView() {
           firstName: form.firstName.trim(),
           lastName: form.lastName.trim(),
           email: form.email.trim().toLowerCase(),
-          phone: form.phone.trim(),
+          phone: normalizeNgPhone(form.phone),
         },
       };
 
@@ -392,8 +393,8 @@ export function CheckoutView() {
               <Field label="Email address" error={errors.email}>
                 <input type="email" value={form.email} onChange={(e) => update("email", e.target.value)} className={`field ${errors.email ? "!border-red-400" : ""}`} placeholder="you@example.com" autoComplete="email" />
               </Field>
-              <Field label="Phone number" error={errors.phone} hint="We'll use this for booking updates.">
-                <input type="tel" value={form.phone} onChange={(e) => update("phone", e.target.value)} className={`field ${errors.phone ? "!border-red-400" : ""}`} placeholder="+234 800 000 0000" autoComplete="tel" />
+              <Field label="Phone number" error={errors.phone} hint="Enter your Nigerian number (e.g. 0801 234 5678) — we’ll add +234 automatically.">
+                <input type="tel" value={form.phone} onChange={(e) => update("phone", e.target.value)} className={`field ${errors.phone ? "!border-red-400" : ""}`} placeholder="0801 234 5678" autoComplete="tel" />
               </Field>
               <div className="sm:col-span-2">
                 <Field label="Special requests" hint="Optional.">
