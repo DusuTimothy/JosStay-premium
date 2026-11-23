@@ -18,26 +18,22 @@ import { expireStalePendingBookings } from "./store/bookingStore.js";
 
 const start = async () => {
   if (USES_DATABASE) {
-    const dbCheck = await checkDatabaseConnection();
-    if (!dbCheck.ok) {
+    let dbCheck = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      dbCheck = await checkDatabaseConnection();
+      if (dbCheck.ok) break;
+      if (attempt < 3) {
+        console.warn(
+          `[startup] PostgreSQL check failed (attempt ${attempt}/3): ${dbCheck.reason}. Retrying...`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    }
+    if (!dbCheck?.ok) {
       console.error(
-        `[startup] PostgreSQL check failed: ${dbCheck.reason}. Run migrations and verify connection/CA cert settings.`,
+        `[startup] PostgreSQL check failed: ${dbCheck?.reason}. Run migrations and verify connection/CA cert settings.`,
       );
       process.exit(1);
-    }
-  }
-
-  if (HAS_REDIS_CONFIG) {
-    try {
-      await connectRedis();
-      const redisCheck = await checkRedisConnection();
-      if (!redisCheck.ok) {
-        console.warn(`[startup] Redis check failed: ${redisCheck.reason}`);
-      }
-    } catch (error) {
-      console.warn(
-        `[startup] Redis connection failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
     }
   }
 
@@ -68,6 +64,28 @@ const start = async () => {
       );
     }
   };
+
+  // Redis is optional. Connect in the background so a missing/dead Redis
+  // cannot prevent the API from serving requests (and health checks).
+  if (HAS_REDIS_CONFIG) {
+    void (async () => {
+      try {
+        await connectRedis();
+        const redisCheck = await checkRedisConnection();
+        if (!redisCheck.ok) {
+          console.warn(`[startup] Redis check failed: ${redisCheck.reason}`);
+        } else {
+          console.log("[startup] Redis connected.");
+        }
+      } catch (error) {
+        console.warn(
+          `[startup] Redis connection failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    })();
+  }
 
   void runExpirySweep("startup");
   const expiryInterval = setInterval(() => {

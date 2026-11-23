@@ -18,16 +18,31 @@ const readCaCert = (certPath) => {
 
 const isTlsUrl = (url) => /^rediss:\/\//i.test(url || "");
 
+const REDIS_CONNECT_TIMEOUT_MS = 5000;
+const REDIS_MAX_RECONNECT_ATTEMPTS = 3;
+
+const reconnectStrategy = (retries) => {
+  if (retries > REDIS_MAX_RECONNECT_ATTEMPTS) {
+    return new Error("Redis reconnect attempts exhausted");
+  }
+  return Math.min(retries * 250, 1000);
+};
+
 const buildSocketOptions = () => {
   const ca = readCaCert(REDIS_CA_CERT_PATH);
+  const base = {
+    connectTimeout: REDIS_CONNECT_TIMEOUT_MS,
+    reconnectStrategy,
+  };
   if (ca || isTlsUrl(REDIS_URL)) {
     return {
+      ...base,
       tls: true,
       rejectUnauthorized: REDIS_TLS_REJECT_UNAUTHORIZED,
       ...(ca ? { ca } : {}),
     };
   }
-  return undefined;
+  return base;
 };
 
 let client = null;
@@ -56,9 +71,28 @@ export const connectRedis = async () => {
   if (!redis) return null;
   if (redis.isOpen) return redis;
   if (!connectPromise) {
-    connectPromise = redis.connect().finally(() => {
-      connectPromise = null;
+    let timer = null;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`Redis connection timed out after ${REDIS_CONNECT_TIMEOUT_MS}ms`)),
+        REDIS_CONNECT_TIMEOUT_MS,
+      );
+      timer.unref?.();
     });
+
+    connectPromise = Promise.race([redis.connect(), timeout])
+      .catch((error) => {
+        // Stop background reconnects so a dead/misconfigured Redis cannot
+        // block process startup or keep retrying forever.
+        try {
+          redis.destroy();
+        } catch {}
+        throw error;
+      })
+      .finally(() => {
+        if (timer) clearTimeout(timer);
+        connectPromise = null;
+      });
   }
   await connectPromise;
   return redis;
