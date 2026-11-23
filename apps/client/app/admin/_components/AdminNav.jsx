@@ -4,9 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const items = [
-  { href: "/admin", label: "Overview" },
-  { href: "/admin/reviews", label: "Listing reviews" },
-  { href: "/admin/refunds", label: "Refund review" },
+  { href: "/account", label: "Overview" },
+  { href: "/account/admin/reviews", label: "Listing reviews" },
+  { href: "/account/admin/refunds", label: "Refund review" },
 ];
 
 export function AdminNav() {

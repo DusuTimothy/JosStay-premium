@@ -1,9 +1,6 @@
-import { AdminOverviewView } from "./_components/AdminOverviewView";
-
-export const metadata = {
-  title: "Admin | JosStay",
-};
+import { redirect } from "next/navigation";
 
 export default function AdminPage() {
-  return <AdminOverviewView />;
+  redirect("/account");
 }
+

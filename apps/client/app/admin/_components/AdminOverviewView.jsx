@@ -3,20 +3,21 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import { useAuth } from "@/components/providers";
+import { useAuth, useToast } from "@/components/providers";
 import { EmptyState, LoadingResults } from "@/components/shared/states";
 import { AdminNav } from "./AdminNav";
 
 const cards = [
   {
-    href: "/admin/reviews",
+    href: "/account/admin/reviews",
     icon: "shield",
     title: "Listing reviews",
     text: "Review host submissions, verify documents/photos, and approve, reject, or suspend listings.",
   },
   {
-    href: "/admin/refunds",
+    href: "/account/admin/refunds",
     icon: "wallet",
     title: "Refund review",
     text: "Review payments flagged for manual refund attention and mark them resolved after checking Paystack.",
@@ -26,7 +27,19 @@ const cards = [
 export function AdminOverviewView() {
   const router = useRouter();
   const auth = useAuth();
+  const { toast } = useToast();
   const [ready, setReady] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  const signOut = async () => {
+    setSigningOut(true);
+    try {
+      await auth.logout();
+      toast("Signed out", "default");
+    } finally {
+      setSigningOut(false);
+    }
+  };
 
   useEffect(() => {
     if (auth.isLoading) return;
@@ -57,11 +70,15 @@ export function AdminOverviewView() {
 
   return (
     <div className="container-page pb-16 pt-6 sm:pt-8">
-      <div>
-        <span className="eyebrow">Admin</span>
-        <h1 className="mt-3 font-display text-[32px] font-bold leading-none tracking-tight text-ink sm:text-[40px]">Admin dashboard</h1>
-        <p className="mt-2 text-sm text-muted">Manage listing reviews and manual refund review from one place.</p>
-        <AdminNav />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <span className="eyebrow">Admin</span>
+          <h1 className="mt-3 font-display text-[32px] font-bold leading-none tracking-tight text-ink sm:text-[40px]">Admin dashboard</h1>
+          <p className="mt-2 text-sm text-muted">Manage listing reviews and manual refund review from one place.</p>
+          <p className="mt-1 text-[11px] text-muted">{auth.user?.email || ""}</p>
+          <AdminNav />
+        </div>
+        <Button variant="secondary" size="sm" onClick={signOut} loading={signingOut}>Sign out</Button>
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2">

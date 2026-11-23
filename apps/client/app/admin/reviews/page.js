@@ -1,9 +1,5 @@
-import { AdminReviewsView } from "./_components/AdminReviewsView";
-
-export const metadata = {
-  title: "Admin reviews | JosStay",
-};
+import { redirect } from "next/navigation";
 
 export default function AdminReviewsPage() {
-  return <AdminReviewsView />;
+  redirect("/account/admin/reviews");
 }

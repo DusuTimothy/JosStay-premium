@@ -1,9 +1,5 @@
-import { AdminRefundsView } from "./_components/AdminRefundsView";
-
-export const metadata = {
-  title: "Admin refund review | JosStay",
-};
+import { redirect } from "next/navigation";
 
 export default function AdminRefundsPage() {
-  return <AdminRefundsView />;
+  redirect("/account/admin/refunds");
 }

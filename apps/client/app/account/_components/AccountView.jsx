@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { useAuth, useBooking, useToast } from "@/components/providers";
+import { AdminOverviewView } from "@/app/admin/_components/AdminOverviewView";
 
 const GOOGLE_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
 
@@ -20,8 +21,8 @@ const baseShortcuts = [
 ];
 
 const adminShortcuts = [
-  { href: "/admin/reviews", icon: "shield", title: "Listing reviews", text: "Review host submissions, documents, and approvals." },
-  { href: "/admin/refunds", icon: "wallet", title: "Refund review", text: "Review flagged payments that need manual refund attention." },
+  { href: "/account/admin/reviews", icon: "shield", title: "Listing reviews", text: "Review host submissions, documents, and approvals." },
+  { href: "/account/admin/refunds", icon: "wallet", title: "Refund review", text: "Review flagged payments that need manual refund attention." },
 ];
 
 function getErrorMessage(error, fallback) {
@@ -242,6 +243,10 @@ export function AccountView() {
         </div>
       </div>
     );
+  }
+
+  if (isAuthenticated && auth.user?.role === "admin") {
+    return <AdminOverviewView />;
   }
 
   return (
