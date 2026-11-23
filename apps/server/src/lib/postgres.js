@@ -74,13 +74,20 @@ const normalizeConnectionStringForSsl = (connectionString, ssl) => {
 
 const buildPoolConfig = () => {
   const ssl = buildSslConfig();
+  // Fail fast on unreachable DB hosts instead of hanging startup/requests.
+  const timeouts = {
+    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 30000,
+  };
   if (DATABASE_URL) {
     return {
+      ...timeouts,
       connectionString: normalizeConnectionStringForSsl(DATABASE_URL, ssl),
       ...(ssl ? { ssl } : {}),
     };
   }
   return {
+    ...timeouts,
     host: PGHOST || undefined,
     port: PGPORT || undefined,
     database: PGDATABASE || undefined,

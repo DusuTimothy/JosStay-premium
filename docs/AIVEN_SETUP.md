@@ -196,6 +196,8 @@ If `NODE_ENV=production` and PostgreSQL/JWT configuration is missing, startup fa
 - RLS is enabled as defense-in-depth; the API enforces object-level authorization and should connect with a trusted server-side DB role.
 
 ### Redis
+- Redis is optional. The API starts and serves health/requests even when `REDIS_URL` is unset or unreachable; Redis connection is attempted in the background with bounded retries.
+- If you delete/replace the Aiven Redis service, remove or update `REDIS_URL` (and `REDIS_CA_CERT_PATH`) in Render. A stale hostname will log connection warnings but will not block startup.
 - Redis is configured for TLS with Aiven CA verification when `REDIS_URL`/`REDIS_CA_CERT_PATH` are provided.
 - Do not store secrets or unprotected sensitive data in Redis without a clear purpose and expiry strategy.
 
