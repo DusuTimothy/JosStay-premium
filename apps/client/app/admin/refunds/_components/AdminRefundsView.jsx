@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { useAuth, useToast } from "@/components/providers";
 import { api } from "@/lib/api";
 import { EmptyState, LoadingResults } from "@/components/shared/states";
+import { AdminNav } from "../../_components/AdminNav";
 
 const formatMoney = (amount, currency = "NGN") => {
   const value = Number(amount || 0);
@@ -114,10 +114,7 @@ export function AdminRefundsView() {
           <span className="eyebrow">Admin</span>
           <h1 className="mt-3 font-display text-[32px] font-bold leading-none tracking-tight text-ink sm:text-[40px]">Refund review</h1>
           <p className="mt-2 text-sm text-muted">Payments flagged for manual refund review. JosStay does not automatically issue Paystack refunds.</p>
-          <div className="mt-3 flex flex-wrap gap-2 text-[12px]">
-            <Link href="/admin/reviews" className="rounded-full border border-line px-3 py-1.5 font-semibold text-muted hover:text-ink">Listing reviews</Link>
-            <span className="rounded-full border border-plum-200 bg-plum-50 px-3 py-1.5 font-semibold text-plum-700">Refund review</span>
-          </div>
+          <AdminNav />
         </div>
         <div className="flex items-center gap-2">
           <select
@@ -177,6 +174,9 @@ export function AdminRefundsView() {
               {resolved ? (
                 <div className="mt-4 rounded-lg bg-emerald-50 px-3 py-3 text-xs text-emerald-900">
                   <p><strong>Resolved:</strong> {formatDate(item.refundResolvedAt)}</p>
+                  {item.refundResolver?.name || item.refundResolver?.email ? (
+                    <p className="mt-1"><strong>By:</strong> {item.refundResolver.name || item.refundResolver.email}</p>
+                  ) : null}
                   {item.refundResolutionNote ? <p className="mt-1">{item.refundResolutionNote}</p> : null}
                 </div>
               ) : (

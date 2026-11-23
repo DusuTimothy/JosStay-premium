@@ -21,6 +21,9 @@ const toRefundReviewItem = (row) => {
     refundResolved: metadata.refundResolved === true,
     refundResolvedAt: metadata.refundResolvedAt || null,
     refundResolvedBy: metadata.refundResolvedBy || null,
+    refundResolver: row.resolver_name || row.resolver_email
+      ? { id: metadata.refundResolvedBy || null, name: row.resolver_name || null, email: row.resolver_email || null }
+      : (metadata.refundResolvedBy ? { id: metadata.refundResolvedBy, name: null, email: null } : null),
     refundResolutionNote: metadata.refundResolutionNote || null,
     booking: row.booking_ref
       ? {
@@ -87,11 +90,14 @@ export const listRefundReviewPayments = async ({ status = "open", limit = 50 } =
       b.guest_last_name,
       b.guest_email,
       prop.name as property_name,
-      rm.name as room_name
+      rm.name as room_name,
+      resolver.full_name as resolver_name,
+      resolver.email as resolver_email
     from public.payments p
     left join public.bookings b on b.id = p.booking_id or b.reference = p.booking_reference
     left join public.properties prop on prop.id = b.property_id
     left join public.rooms rm on rm.id = b.room_id
+    left join public.profiles resolver on resolver.id::text = p.metadata->>'refundResolvedBy'
     ${where}
     order by
       case when coalesce(p.metadata->>'refundResolved', 'false') = 'true' then 1 else 0 end,
@@ -187,11 +193,14 @@ export const resolveRefundReviewPayment = async ({
       b.guest_last_name,
       b.guest_email,
       prop.name as property_name,
-      rm.name as room_name
+      rm.name as room_name,
+      resolver.full_name as resolver_name,
+      resolver.email as resolver_email
     from public.payments p
     left join public.bookings b on b.id = p.booking_id or b.reference = p.booking_reference
     left join public.properties prop on prop.id = b.property_id
     left join public.rooms rm on rm.id = b.room_id
+    left join public.profiles resolver on resolver.id::text = p.metadata->>'refundResolvedBy'
     where p.provider = 'paystack' and p.reference = $1
     limit 1`,
     [reference],

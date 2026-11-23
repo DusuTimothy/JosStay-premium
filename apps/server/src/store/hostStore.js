@@ -628,9 +628,10 @@ const ADMIN_LISTING_SELECT = `
   select
     p.id, p.slug, p.name, p.type, p.area, p.address, p.price, p.weekend_price, p.summary, p.description,
     p.verified, p.is_published, p.verification_status, p.submitted_for_verification_at, p.verified_at,
-    p.verification_notes, p.created_at, p.updated_at,
+    p.verification_notes, p.reviewed_by, p.reviewed_at, p.created_at, p.updated_at,
     h.id as host_id, h.name as host_record_name,
     pr.full_name as host_name, pr.email as host_email,
+    reviewer.full_name as reviewer_name, reviewer.email as reviewer_email,
     coalesce((
       select jsonb_agg(jsonb_build_object(
         'id', d.id,
@@ -653,6 +654,7 @@ const ADMIN_LISTING_SELECT = `
   from public.properties p
   join public.hosts h on h.id = p.host_id
   join public.profiles pr on pr.id = h.user_id
+  left join public.profiles reviewer on reviewer.id = p.reviewed_by
 `;
 
 const toAdminListingResponse = (row) => {
@@ -685,6 +687,15 @@ const toAdminListingResponse = (row) => {
     submittedForVerificationAt: row.submitted_for_verification_at,
     verifiedAt: row.verified_at,
     verificationNotes: row.verification_notes || null,
+    reviewedAt: row.reviewed_at || null,
+    reviewedBy: row.reviewed_by || null,
+    reviewer: row.reviewed_by
+      ? {
+          id: row.reviewed_by,
+          name: row.reviewer_name || null,
+          email: row.reviewer_email || null,
+        }
+      : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     photoCount: images.length,
@@ -771,10 +782,12 @@ export const reviewHostListing = async ({ listingId, action, notes, reviewerUser
          is_published = $4,
          verified_at = $5::timestamptz,
          verification_notes = $6,
+         reviewed_by = $7::uuid,
+         reviewed_at = now(),
          updated_at = now()
      where id = $1::uuid
      returning id`,
-    [listingId, verificationStatus, verified, isPublished, verifiedAt, cleanNotes],
+    [listingId, verificationStatus, verified, isPublished, verifiedAt, cleanNotes, reviewerUserId || null],
   );
   if (!rows[0]) throw new HttpError(404, "Listing not found");
 

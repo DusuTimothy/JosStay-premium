@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -9,6 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useAuth, useToast } from "@/components/providers";
 import { api } from "@/lib/api";
 import { EmptyState, LoadingResults } from "@/components/shared/states";
+import { AdminNav } from "../../_components/AdminNav";
 
 const statusTone = (status) => {
   if (status === "verified" || status === "Live") return "verified";
@@ -101,10 +101,7 @@ export function AdminReviewsView() {
           <span className="eyebrow">Admin</span>
           <h1 className="mt-3 font-display text-[32px] font-bold leading-none tracking-tight text-ink sm:text-[40px]">Listing reviews</h1>
           <p className="mt-2 text-sm text-muted">Review host submissions, verify documents/photos, and approve or reject listings.</p>
-          <div className="mt-3 flex flex-wrap gap-2 text-[12px]">
-            <span className="rounded-full border border-plum-200 bg-plum-50 px-3 py-1.5 font-semibold text-plum-700">Listing reviews</span>
-            <Link href="/admin/refunds" className="rounded-full border border-line px-3 py-1.5 font-semibold text-muted hover:text-ink">Refund review</Link>
-          </div>
+          <AdminNav />
         </div>
         <div className="flex items-center gap-2">
           <select
@@ -151,6 +148,10 @@ export function AdminReviewsView() {
               <div className="text-right text-[11px] text-muted">
                 <p>Submitted: {item.submittedForVerificationAt ? new Date(item.submittedForVerificationAt).toLocaleString() : "—"}</p>
                 <p>Updated: {item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "—"}</p>
+                {item.reviewedAt ? <p>Reviewed: {new Date(item.reviewedAt).toLocaleString()}</p> : null}
+                {item.reviewer?.name || item.reviewer?.email ? (
+                  <p>By: {item.reviewer?.name || item.reviewer?.email}</p>
+                ) : null}
               </div>
             </div>
 
