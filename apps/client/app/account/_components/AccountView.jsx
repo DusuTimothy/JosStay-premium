@@ -12,11 +12,16 @@ const GOOGLE_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
 
 const SIGNUP_MIN_PASSWORD_LENGTH = 8;
 
-const shortcuts = [
+const baseShortcuts = [
   { href: "/bookings", icon: "calendar", title: "My bookings", text: "View and manage your stays in Jos." },
   { href: "/host/dashboard", icon: "home", title: "Host dashboard", text: "Manage listings, calendar and payouts." },
   { href: "/bundle", icon: "plane", title: "Flight + stay", text: "Coming soon — flight booking will be available later." },
   { href: "/help", icon: "whatsapp", title: "Help centre", text: "Answers, policies and support." },
+];
+
+const adminShortcuts = [
+  { href: "/admin/reviews", icon: "shield", title: "Listing reviews", text: "Review host submissions, documents, and approvals." },
+  { href: "/admin/refunds", icon: "wallet", title: "Refund review", text: "Review flagged payments that need manual refund attention." },
 ];
 
 function getErrorMessage(error, fallback) {
@@ -221,6 +226,7 @@ export function AccountView() {
       .toUpperCase() || "JS";
   const upcoming = bookings.filter((b) => b.status === "upcoming").length;
   const isSignup = mode === "signup";
+  const shortcuts = auth.user?.role === "admin" ? [...adminShortcuts, ...baseShortcuts] : baseShortcuts;
 
   if (auth.isLoading) {
     return (
