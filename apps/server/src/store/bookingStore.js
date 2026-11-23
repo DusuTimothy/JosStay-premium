@@ -113,15 +113,15 @@ export const expireStalePendingBookings = async ({ reference } = {}) => {
  * transaction, so a booking must only ever expose one active link.
  */
 export const findReusablePaymentForBooking = async (
-  bookingId,
+  bookingReference,
   { maxAgeMinutes = PENDING_PAYMENT_TTL_MINUTES } = {},
 ) => {
-  if (!isDatabaseEnabled || !bookingId) return null;
+  if (!isDatabaseEnabled || !bookingReference) return null;
   const { rows } = await query(
     `select reference, amount, currency, authorization_url, access_code,
             customer_email, initialized_at
      from public.payments
-     where booking_id = $1::uuid
+     where booking_reference = $1
        and provider = 'paystack'
        and status = 'initialized'
        and authorization_url is not null
@@ -129,7 +129,7 @@ export const findReusablePaymentForBooking = async (
        and initialized_at > (now() - ($2::int * interval '1 minute'))
      order by initialized_at desc
      limit 1`,
-    [bookingId, maxAgeMinutes],
+    [bookingReference, maxAgeMinutes],
   );
   return rows[0] || null;
 };

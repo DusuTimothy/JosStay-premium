@@ -13,6 +13,7 @@ import { isDatabaseEnabled, query } from "../lib/postgres.js";
 import {
   cancelBookingRecord,
   createBookingRecord,
+  findBookingByReference,
   findReusablePaymentForBooking,
   getBookingRecord,
   listBookingRecords,
@@ -257,7 +258,11 @@ export const listBookings = asyncHandler(async (req, res) => {
 
 export const initializeBookingPayment = asyncHandler(async (req, res) => {
   const reference = BookingReferenceSchema.parse(req.params.reference);
-  const booking = await getBookingRecord(reference, req.auth);
+  // Internal record is needed for booking.id when linking payment rows.
+  const booking = await findBookingByReference(reference, {
+    auth: req.auth,
+    includeInternal: true,
+  });
 
   if (!booking) {
     throw new HttpError(404, "Booking not found");
@@ -301,7 +306,7 @@ export const initializeBookingPayment = asyncHandler(async (req, res) => {
 
     // Reuse an existing active Paystack transaction to avoid creating multiple
     // payable checkout links for the same booking.
-    const reusable = await findReusablePaymentForBooking(booking.id);
+    const reusable = await findReusablePaymentForBooking(booking.reference);
     if (reusable?.reference) {
       const updatedBooking =
         (await markBookingPaymentByReference({
