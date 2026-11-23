@@ -393,7 +393,7 @@ export function CheckoutView() {
               <Field label="Email address" error={errors.email}>
                 <input type="email" value={form.email} onChange={(e) => update("email", e.target.value)} className={`field ${errors.email ? "!border-red-400" : ""}`} placeholder="you@example.com" autoComplete="email" />
               </Field>
-              <Field label="Phone number" error={errors.phone} hint="Enter your Nigerian number (e.g. 0801 234 5678) — we’ll add +234 automatically.">
+              <Field label="Phone number" error={errors.phone} hint="We'll use this for booking updates.">
                 <input type="tel" value={form.phone} onChange={(e) => update("phone", e.target.value)} className={`field ${errors.phone ? "!border-red-400" : ""}`} placeholder="0801 234 5678" autoComplete="tel" />
               </Field>
               <div className="sm:col-span-2">

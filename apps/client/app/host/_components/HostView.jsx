@@ -179,7 +179,6 @@ export function HostView() {
               <label className="block">
                 <span className="label">Phone number</span>
                 <input type="tel" value={form.phone} onChange={(e) => { setForm((f) => ({ ...f, phone: e.target.value })); setErrors((er) => ({ ...er, phone: undefined, form: undefined })); }} className={`field ${errors.phone ? "!border-red-400" : ""}`} placeholder="0801 234 5678" autoComplete="tel" />
-                {!errors.phone && <span className="mt-1 block text-[11px] text-muted">Enter your Nigerian number — we’ll add +234 automatically.</span>}
                 {errors.phone && <span className="mt-1 block text-[11px] text-red-600">{errors.phone}</span>}
               </label>
 
