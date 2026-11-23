@@ -47,6 +47,14 @@ const RawEnvSchema = z.object({
   TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
   API_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100000).default(300),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1000).default(10),
+  EMAIL_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(1000).default(5),
+  EMAIL_VERIFICATION_TTL_MINUTES: z.coerce
+    .number()
+    .int()
+    .min(5)
+    .max(10080)
+    .default(1440),
+  PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
 });
 
 const parsed = RawEnvSchema.safeParse(process.env);
@@ -182,6 +190,9 @@ export const BCRYPT_ROUNDS = raw.BCRYPT_ROUNDS;
 export const TRUST_PROXY = raw.TRUST_PROXY;
 export const API_RATE_LIMIT_MAX = raw.API_RATE_LIMIT_MAX;
 export const AUTH_RATE_LIMIT_MAX = raw.AUTH_RATE_LIMIT_MAX;
+export const EMAIL_RATE_LIMIT_MAX = raw.EMAIL_RATE_LIMIT_MAX;
+export const EMAIL_VERIFICATION_TTL_MINUTES = raw.EMAIL_VERIFICATION_TTL_MINUTES;
+export const PASSWORD_RESET_TTL_MINUTES = raw.PASSWORD_RESET_TTL_MINUTES;
 
 export const CLIENT_ORIGIN = clean(raw.CLIENT_ORIGIN) || "http://localhost:3000";
 export const corsOrigins = CLIENT_ORIGIN.split(",")

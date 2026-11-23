@@ -145,6 +145,20 @@ export const revokeRefreshSession = async (token) => {
   }
 };
 
+export const revokeAllRefreshSessionsForUser = async (userId) => {
+  if (!userId || !isDatabaseEnabled) return;
+  try {
+    await query(
+      `update public.refresh_tokens
+       set revoked_at = now()
+       where user_id = $1::uuid and revoked_at is null`,
+      [userId],
+    );
+  } catch {
+    // Best-effort; password has already changed.
+  }
+};
+
 export const refreshCookieOptions = (expiresAt) => ({
   httpOnly: true,
   secure: AUTH_COOKIE_SECURE,

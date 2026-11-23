@@ -20,6 +20,7 @@ export const publicUser = (user) =>
         name: user.name,
         email: user.email,
         role: user.role,
+        emailVerified: Boolean(user.emailVerified ?? user.email_verified),
       }
     : null;
 
@@ -32,6 +33,7 @@ const mapAuthProfile = (row) =>
         name: row.full_name,
         role: row.role,
         googleSub: row.google_sub ?? null,
+        emailVerified: Boolean(row.email_verified),
       }
     : null;
 
@@ -44,7 +46,7 @@ export const findUserByEmail = async (email) => {
 
   try {
     const { rows } = await query(
-      `select id, email, password_hash, full_name, role, google_sub
+      `select id, email, password_hash, full_name, role, google_sub, email_verified
        from public.profiles
        where lower(email) = lower($1)
        limit 1`,
@@ -64,7 +66,7 @@ export const findUserById = async (id) => {
 
   try {
     const { rows } = await query(
-      `select id, email, full_name, role
+      `select id, email, full_name, role, email_verified
        from public.profiles
        where id = $1::uuid
        limit 1`,
@@ -84,7 +86,7 @@ export const findUserByGoogleSub = async (googleSub) => {
 
   try {
     const { rows } = await query(
-      `select id, email, full_name, role
+      `select id, email, full_name, role, email_verified
        from public.profiles
        where google_sub = $1
        limit 1`,
@@ -117,6 +119,7 @@ export const createUser = async ({ name, email, password, role = "guest" }) => {
       email: normalized,
       passwordHash,
       role,
+      emailVerified: false,
       createdAt: new Date().toISOString(),
     };
     users.push(user);
@@ -127,9 +130,9 @@ export const createUser = async ({ name, email, password, role = "guest" }) => {
 
   try {
     const { rows } = await query(
-      `insert into public.profiles (email, password_hash, full_name, role)
-       values ($1, $2, $3, $4::public.user_role)
-       returning id, email, full_name, role`,
+      `insert into public.profiles (email, password_hash, full_name, role, email_verified)
+       values ($1, $2, $3, $4::public.user_role, false)
+       returning id, email, full_name, role, email_verified`,
       [normalized, passwordHash, fullName, role],
     );
     return mapProfile(rows[0]);
@@ -153,6 +156,8 @@ export const createOrLinkGoogleUser = async ({ email, name, googleSub }) => {
     if (byEmail) {
       byEmail.googleSub = byEmail.googleSub || googleSub;
       if (!byEmail.name && fullName) byEmail.name = fullName;
+      // Google has already verified control of this inbox.
+      byEmail.emailVerified = true;
       return publicUser(byEmail);
     }
     const nextId = users.reduce((max, user) => Math.max(max, Number(user.id) || 0), 0) + 1;
@@ -163,6 +168,7 @@ export const createOrLinkGoogleUser = async ({ email, name, googleSub }) => {
       passwordHash: null,
       role: "guest",
       googleSub,
+      emailVerified: true,
       createdAt: new Date().toISOString(),
     };
     users.push(user);
@@ -171,13 +177,13 @@ export const createOrLinkGoogleUser = async ({ email, name, googleSub }) => {
 
   try {
     const bySub = await query(
-      `select id, email, full_name, role from public.profiles where google_sub = $1 limit 1`,
+      `select id, email, full_name, role, email_verified from public.profiles where google_sub = $1 limit 1`,
       [googleSub],
     );
     if (bySub.rows[0]) return mapProfile(bySub.rows[0]);
 
     const byEmail = await query(
-      `select id, email, full_name, role, google_sub from public.profiles where lower(email) = lower($1) limit 1`,
+      `select id, email, full_name, role, google_sub, email_verified from public.profiles where lower(email) = lower($1) limit 1`,
       [normalized],
     );
     if (byEmail.rows[0]) {
@@ -189,18 +195,20 @@ export const createOrLinkGoogleUser = async ({ email, name, googleSub }) => {
         `update public.profiles
          set google_sub = $2,
              full_name = case when coalesce(trim(full_name), '') = '' then $3 else full_name end,
+             email_verified = true,
+             email_verified_at = coalesce(email_verified_at, now()),
              updated_at = now()
          where id = $1
-         returning id, email, full_name, role`,
+         returning id, email, full_name, role, email_verified`,
         [existing.id, googleSub, fullName],
       );
       return mapProfile(linked.rows[0]);
     }
 
     const created = await query(
-      `insert into public.profiles (email, password_hash, full_name, role, google_sub)
-       values ($1, null, $2, 'guest'::public.user_role, $3)
-       returning id, email, full_name, role`,
+      `insert into public.profiles (email, password_hash, full_name, role, google_sub, email_verified, email_verified_at)
+       values ($1, null, $2, 'guest'::public.user_role, $3, true, now())
+       returning id, email, full_name, role, email_verified`,
       [normalized, fullName, googleSub],
     );
     return mapProfile(created.rows[0]);

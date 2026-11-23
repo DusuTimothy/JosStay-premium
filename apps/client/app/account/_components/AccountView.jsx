@@ -152,7 +152,7 @@ export function AccountView() {
     try {
       if (mode === "signup") {
         await auth.register({ name: trimmedName, email: trimmedEmail, password });
-        toast("Account created. Welcome to JosStay.", "success");
+        toast("Account created. Check your email to verify your address.", "success");
       } else {
         await auth.login({ email: trimmedEmail, password });
         toast("Signed in to your JosStay account", "success");
@@ -243,11 +243,45 @@ export function AccountView() {
                     <p className="text-[11.5px] text-muted">{auth.user?.email || ""}</p>
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
                       <Badge tone="purple" className="capitalize">{auth.user?.role || "guest"}</Badge>
+                      {auth.user?.emailVerified ? (
+                        <Badge tone="green">Email verified</Badge>
+                      ) : (
+                        <Badge tone="amber">Email not verified</Badge>
+                      )}
                     </div>
                   </div>
                 </div>
                 <Button variant="secondary" size="sm" onClick={signOut} loading={submitting}>Sign out</Button>
               </div>
+
+              {!auth.user?.emailVerified && (
+                <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-[12px] text-amber-900">
+                  <p className="font-semibold">Verify your email address</p>
+                  <p className="mt-1 text-amber-800">
+                    We sent a verification link when you created your account. Check your inbox and spam folder.
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-2 font-semibold text-plum-700 underline decoration-plum-300 underline-offset-4 disabled:opacity-60"
+                    disabled={submitting}
+                    onClick={async () => {
+                      if (submitting) return;
+                      setSubmitting(true);
+                      try {
+                        await auth.requestEmailVerification(auth.user.email);
+                        toast("If your account needs verification, we sent a new link.", "success");
+                      } catch (error) {
+                        const message = getErrorMessage(error, "Could not send verification email");
+                        toast(message, "error");
+                      } finally {
+                        setSubmitting(false);
+                      }
+                    }}
+                  >
+                    Resend verification email
+                  </button>
+                </div>
+              )}
 
               <div className="mt-6 grid gap-2.5 sm:grid-cols-3">
                 {[
@@ -350,6 +384,17 @@ export function AccountView() {
                   minLength={isSignup ? SIGNUP_MIN_PASSWORD_LENGTH : undefined}
                   maxLength={72}
                 />
+
+                {!isSignup && (
+                  <div className="flex justify-end">
+                    <Link
+                      href="/forgot-password"
+                      className="text-[11.5px] font-semibold text-plum-700 underline decoration-plum-300 underline-offset-4"
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
+                )}
 
                 <Button type="submit" full size="lg" loading={submitting}>
                   {isSignup ? "Create account" : "Sign in"}

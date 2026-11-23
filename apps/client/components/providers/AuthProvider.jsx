@@ -80,6 +80,10 @@ export function AuthProvider({ children }) {
     return applySession(res?.data);
   }, [applySession]);
 
+  const requestEmailVerification = useCallback(async (email) => {
+    return api.post("/api/auth/verify-email/request", { email });
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await api.post("/api/auth/logout", {});
@@ -100,13 +104,14 @@ export function AuthProvider({ children }) {
       login,
       register,
       loginWithGoogle,
+      requestEmailVerification,
       logout,
       refresh,
       setSession: applySession,
       clearSession,
       ApiError,
     }),
-    [user, accessToken, status, login, register, loginWithGoogle, logout, refresh, applySession, clearSession],
+    [user, accessToken, status, login, register, loginWithGoogle, requestEmailVerification, logout, refresh, applySession, clearSession],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

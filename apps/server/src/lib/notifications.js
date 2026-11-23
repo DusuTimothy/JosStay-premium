@@ -1,4 +1,5 @@
-import { sendTransactionalEmail } from "./brevo.js";
+import { IS_PRODUCTION } from "../config/env.js";
+import { isBrevoConfigured, sendTransactionalEmail } from "./brevo.js";
 
 const esc = (value) =>
   String(value ?? "")
@@ -73,6 +74,75 @@ export async function sendHostWelcomeEmail({ to, name }) {
   const textContent = `Hi ${name || "Host"},\n\nYour JosStay host account is ready. You can now create and manage your listings from your host dashboard.\n\nJosStay`;
   const htmlContent = `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111"><p>Hi ${safeName},</p><p>Your JosStay host account is ready. You can now create and manage your listings from your host dashboard.</p><p>JosStay</p></div>`;
   return sendTransactionalEmail({ to, subject, htmlContent, textContent, tags: ["host", "welcome"] });
+}
+
+const sendAuthEmail = async ({ to, subject, htmlContent, textContent, tags, link }) => {
+  // Local/dev fallback: when email is not configured, log the action link so
+  // the flow can be tested. Never log tokens in production.
+  if (!IS_PRODUCTION && !isBrevoConfigured()) {
+    console.info("[auth] email link (development only)", { to, subject, link });
+  }
+  return sendTransactionalEmail({ to, subject, htmlContent, textContent, tags });
+};
+
+export async function sendEmailVerificationEmail({ to, name, link, expiresInMinutes }) {
+  if (!to) return { skipped: true, reason: "missing_email" };
+  const safeName = esc(name || "there");
+  const safeLink = esc(link);
+  const hours = Math.max(1, Math.round(Number(expiresInMinutes || 0) / 60));
+  const subject = "Verify your JosStay email address";
+  const textContent = `Hi ${name || "there"},\n\nConfirm your email address to finish setting up your JosStay account:\n${link}\n\nThis link expires in about ${hours} hour(s). If you did not create a JosStay account, you can ignore this email.\n\nJosStay`;
+  const htmlContent = `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
+      <h2 style="margin:0 0 12px">Verify your email</h2>
+      <p>Hi ${safeName},</p>
+      <p>Confirm your email address to finish setting up your JosStay account.</p>
+      <p style="margin:24px 0">
+        <a href="${safeLink}" style="display:inline-block;background:#c9a227;color:#111;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Verify email</a>
+      </p>
+      <p style="font-size:13px;color:#555">Or paste this link into your browser:<br /><span style="word-break:break-all">${safeLink}</span></p>
+      <p style="font-size:13px;color:#555">This link expires in about ${hours} hour(s). If you did not create a JosStay account, you can ignore this email.</p>
+      <p>JosStay</p>
+    </div>
+  `;
+  return sendAuthEmail({
+    to,
+    subject,
+    htmlContent,
+    textContent,
+    tags: ["auth", "email-verification"],
+    link,
+  });
+}
+
+export async function sendPasswordResetEmail({ to, name, link, expiresInMinutes }) {
+  if (!to) return { skipped: true, reason: "missing_email" };
+  const safeName = esc(name || "there");
+  const safeLink = esc(link);
+  const minutes = Math.max(1, Math.round(Number(expiresInMinutes || 0)));
+  const subject = "Reset your JosStay password";
+  const textContent = `Hi ${name || "there"},\n\nWe received a request to reset your JosStay password. Use this link to choose a new password:\n${link}\n\nThis link expires in about ${minutes} minute(s) and can only be used once. If you did not request a reset, you can ignore this email; your password will not change.\n\nJosStay`;
+  const htmlContent = `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
+      <h2 style="margin:0 0 12px">Reset your password</h2>
+      <p>Hi ${safeName},</p>
+      <p>We received a request to reset your JosStay password. Choose a new password using the button below.</p>
+      <p style="margin:24px 0">
+        <a href="${safeLink}" style="display:inline-block;background:#c9a227;color:#111;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Reset password</a>
+      </p>
+      <p style="font-size:13px;color:#555">Or paste this link into your browser:<br /><span style="word-break:break-all">${safeLink}</span></p>
+      <p style="font-size:13px;color:#555">This link expires in about ${minutes} minute(s) and can only be used once. If you did not request a reset, you can ignore this email; your password will not change.</p>
+      <p>JosStay</p>
+    </div>
+  `;
+  return sendAuthEmail({
+    to,
+    subject,
+    htmlContent,
+    textContent,
+    tags: ["auth", "password-reset"],
+    link,
+  });
 }
 
 export async function sendHostListingReviewEmail({ to, name, listingName, approved, notes }) {

@@ -6,6 +6,8 @@ const tones = {
   purple: "bg-plum-50 text-plum-700 border-plum-100",
   neutral: "bg-white/90 text-ink border-line",
   success: "bg-emerald-50 text-emerald-700 border-emerald-100",
+  green: "bg-emerald-50 text-emerald-700 border-emerald-100",
+  amber: "bg-amber-50 text-amber-700 border-amber-100",
   danger: "bg-red-50 text-red-700 border-red-100",
   white: "bg-white text-ink border-line shadow-sm",
   dark: "bg-ink/85 text-white border-transparent backdrop-blur",

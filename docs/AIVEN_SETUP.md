@@ -209,10 +209,14 @@ If `NODE_ENV=production` and PostgreSQL/JWT configuration is missing, startup fa
 - Parameterized SQL queries only; no raw SQL built from user input.
 
 ### Not implemented yet
-- Email verification, password reset, MFA and OAuth.
-- Payment webhooks and Paystack verification.
+- MFA and additional OAuth providers.
 - Redis-backed caching/session/rate-limit storage (connection/config support is in place).
 - Audit-log retention and alerting.
+
+### Implemented auth (update)
+- Email verification: password sign-up creates an unverified account and sends a one-time verification link; `POST /api/auth/verify-email/request` and `POST /api/auth/verify-email/confirm` handle resend/confirm. Google-verified emails are marked verified.
+- Password reset: `POST /api/auth/password/forgot` sends a generic response (no account enumeration) and a one-time reset link when the account exists; `POST /api/auth/password/reset` sets a new bcrypt password and revokes refresh sessions.
+- Tokens are stored only as SHA-256 hashes with expiry and single-use consumption. Email delivery uses Brevo when configured; in development without Brevo, the link is logged to the server console.
 
 ---
 

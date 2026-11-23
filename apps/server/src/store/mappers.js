@@ -42,6 +42,7 @@ export const mapProfile = (row) =>
         name: row.full_name,
         email: row.email,
         role: row.role,
+        emailVerified: Boolean(row.email_verified),
       }
     : null;
 

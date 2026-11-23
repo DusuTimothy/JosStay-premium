@@ -43,7 +43,11 @@ const run = async () => {
   if (existing.rows[0]) {
     const updated = await query(
       `update public.profiles
-       set password_hash = $1, full_name = $2, role = $3::public.user_role
+       set password_hash = $1,
+           full_name = $2,
+           role = $3::public.user_role,
+           email_verified = true,
+           email_verified_at = coalesce(email_verified_at, now())
        where id = $4::uuid
        returning id, email, full_name, role`,
       [passwordHash, name, role, existing.rows[0].id],
@@ -52,8 +56,8 @@ const run = async () => {
     console.log(`Updated ${profile.email} (${profile.role}).`);
   } else {
     const created = await query(
-      `insert into public.profiles (email, password_hash, full_name, role)
-       values ($1, $2, $3, $4::public.user_role)
+      `insert into public.profiles (email, password_hash, full_name, role, email_verified, email_verified_at)
+       values ($1, $2, $3, $4::public.user_role, true, now())
        returning id, email, full_name, role`,
       [email, passwordHash, name, role],
     );

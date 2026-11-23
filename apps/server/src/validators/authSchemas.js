@@ -32,3 +32,22 @@ export const GoogleAuthSchema = z
     credential: z.string().trim().min(1).max(4096),
   })
   .strict();
+
+export const EmailOnlySchema = z
+  .object({
+    email,
+  })
+  .strict();
+
+export const TokenSchema = z
+  .object({
+    token: z.string().trim().min(16).max(512),
+  })
+  .strict();
+
+export const ResetPasswordSchema = z
+  .object({
+    token: z.string().trim().min(16).max(512),
+    password,
+  })
+  .strict();

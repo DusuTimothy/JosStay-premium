@@ -2,6 +2,7 @@ import rateLimit from "express-rate-limit";
 import {
   API_RATE_LIMIT_MAX,
   AUTH_RATE_LIMIT_MAX,
+  EMAIL_RATE_LIMIT_MAX,
 } from "../config/env.js";
 
 const base = {
@@ -23,5 +24,15 @@ export const authLimiter = rateLimit({
   skipSuccessfulRequests: true,
   message: {
     error: "Too many authentication attempts. Please try again later.",
+  },
+});
+
+// Email-sending endpoints get a tighter per-IP ceiling to limit abuse.
+export const authEmailLimiter = rateLimit({
+  ...base,
+  windowMs: 15 * 60 * 1000,
+  limit: EMAIL_RATE_LIMIT_MAX,
+  message: {
+    error: "Too many requests. Please try again later.",
   },
 });
