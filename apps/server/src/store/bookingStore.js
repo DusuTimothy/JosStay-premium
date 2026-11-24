@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { nightsBetween, quoteStay, toIso } from "@josstay/shared";
 import { HttpError } from "../lib/http.js";
+import { calculatePaymentFee } from "../lib/paymentFees.js";
 import { getClient, isDatabaseEnabled, query } from "../lib/postgres.js";
 import { bookings, createReference } from "./demoStore.js";
 import { findHostByUserId } from "./hostStore.js";
@@ -25,6 +26,7 @@ const BOOKING_SELECT_SQL = `
     b.requests,
     b.status,
     b.total,
+    b.payment_fee,
     b.currency,
     b.quote,
     b.cancelled_at,
@@ -249,6 +251,8 @@ export const createBookingRecord = async ({
     airportPickup: payload.airportPickup,
   });
 
+  const paymentFee = calculatePaymentFee(quote.total, payload.paymentMethod);
+
   const paymentStatus = payment.status || "pending";
   const bookingStatus = payment.bookingStatus || "upcoming";
   const paymentReference = payment.reference || null;
@@ -278,6 +282,7 @@ export const createBookingRecord = async ({
       guest: payload.guest,
       status: bookingStatus,
       total: quote.total,
+      paymentFee,
       currency: "NGN",
       quote,
       createdAt: nowIso,
@@ -310,13 +315,13 @@ export const createBookingRecord = async ({
           airport_pickup, payment_method, requests,
           guest_first_name, guest_last_name, guest_email, guest_phone,
           status, payment_status, payment_reference, payment_provider, paid_at,
-          total, currency, quote
+          total, payment_fee, currency, quote
         ) values (
           $1::uuid, $2::uuid, $3::uuid, $4::date, $5::date, $6::int,
           $7::boolean, $8::public.payment_method, $9::text,
           $10::text, $11::text, $12::text, $13::text,
           $14::public.booking_status, $15::public.payment_status, $16, $17, $18::timestamptz,
-          $19::int, 'NGN', $20::jsonb
+          $19::int, $21::int, 'NGN', $20::jsonb
         )
         returning id`,
         [
@@ -340,6 +345,7 @@ export const createBookingRecord = async ({
           paymentStatus === "paid" ? new Date().toISOString() : null,
           quote.total,
           JSON.stringify(quote),
+          paymentFee,
         ],
       );
 

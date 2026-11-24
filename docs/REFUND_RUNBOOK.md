@@ -19,6 +19,12 @@ Open items are payments where `requiresRefund=true` and `refundResolved` is not 
 | `amount_mismatch` | The paid amount/currency did not match the expected booking amount. | Verify the transaction in Paystack and booking totals. Refund or reconcile manually before making any booking active. |
 | `booking_cancelled` / `booking_abandoned` | A successful charge arrived for a booking that is not payable. | Verify in Paystack. Refund unless there is a clear manual reconciliation reason. |
 
+## Payment fee on refunds
+
+Guests are charged the stay amount **plus a Paystack processing fee** (`bookings.payment_fee`). On a refund, return the **full charged amount** (`bookings.total + bookings.payment_fee`). Paystack generally does not return its processing fee, so the platform absorbs it. Do not deduct the processing fee from the guest's refund.
+
+When refunding from the Paystack dashboard, use the transaction's full settled amount, not just the stay total.
+
 ## Manual refund process
 
 1. **Open `/admin/refunds`** and review the open item.

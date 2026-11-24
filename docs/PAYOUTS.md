@@ -81,13 +81,18 @@ Rules:
 - Compute server-side at payment initialization and store the fee on the payment/booking record.
 - The fee is **pass-through**: it is not host gross, not commissionable, and not platform revenue.
 - If the guest abandons or fails payment, no fee is charged.
-- **Refunds:** Paystack generally does not return its processing fee, so on a refund the platform absorbs it (and may deduct it from the refunded amount only if your refund policy says so — confirm).
+- **Refunds:** the guest receives the **full charged amount** (`total + payment_fee`). Paystack generally does not return its processing fee, so the platform absorbs it. Do not deduct it from the guest's refund.
 
-> **Confirm before implementing:** the exact fee schedule per channel, whether the fee is shown as a separate "Payment fee" line or baked into the total, and whether passing fees to customers is permitted under your Paystack agreement/card scheme rules.
+**Implemented (2026-11-24):**
+- Fee config: `apps/server/src/lib/paymentFees.js`, per-channel `{ rate, fixed, cap }`, overridable via `PAYMENT_FEE_<CHANNEL>_*` env vars.
+- `bookings.total` stays the stay amount; `bookings.payment_fee` stores the pass-through fee (migration `20261124120000_booking_payment_fee.sql`).
+- Paystack init/verify use `total + payment_fee`; commission/earnings still use `total` only.
+- Checkout and confirmation show a separate **Payment fee** line; the receipt/email show the charged total.
+- Still to confirm operationally: the exact fee schedule per channel against the live Paystack dashboard, and that fee pass-through is permitted under the Paystack/card-scheme terms.
 
 Store `gross`, `commission`, and `net` per earning row (do not recompute later, so rate changes don't rewrite history).
 
-> **Decision needed:** whether the platform absorbs the Paystack processing fee or deducts it from host net. Default assumption in this spec: **platform absorbs it** (host net is unaffected by Paystack fees).
+> **Resolved:** the guest bears the Paystack processing fee; the platform absorbs it only on refunds. Host net is unaffected by Paystack fees.
 
 ### Earning availability
 An earning becomes withdrawable only when:

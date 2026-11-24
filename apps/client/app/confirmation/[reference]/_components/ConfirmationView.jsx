@@ -146,7 +146,7 @@ export function ConfirmationView() {
             key: paystackPublicKey,
             email: payment.email || updatedBooking?.guest?.email || booking.guest?.email,
             amountKobo: payment.amountKobo,
-            amount: payment.amount ?? updatedBooking?.total ?? booking.total,
+            amount: payment.amount ?? ((updatedBooking?.total ?? booking.total ?? 0) + (updatedBooking?.paymentFee ?? booking.paymentFee ?? 0)),
             reference: payment.reference,
             currency: payment.currency || updatedBooking?.currency || "NGN",
             method: updatedBooking?.paymentMethod || booking.paymentMethod || "card",
@@ -386,7 +386,10 @@ export function ConfirmationView() {
         <div className="flex items-center justify-between border-t border-line bg-canvas px-4 py-4 sm:px-5">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted">{isPaid ? "Total paid" : "Total"}</p>
-            <p className="mt-1 font-display text-[22px] font-bold leading-none text-ink">{format(booking.total || 0)}</p>
+            <p className="mt-1 font-display text-[22px] font-bold leading-none text-ink">{format((booking.total || 0) + (booking.paymentFee || 0))}</p>
+            {booking.paymentFee > 0 ? (
+              <p className="mt-1 text-[10.5px] text-muted">Stay {format(booking.total || 0)} + payment fee {format(booking.paymentFee)}</p>
+            ) : null}
             <p className="mt-1 text-[10.5px] text-muted">Final amount confirmed by JosStay.</p>
           </div>
           {isPaid ? <Badge tone="success" icon="checkCircle">Paid</Badge> : isFailedPayment ? <Badge tone="danger" icon="x">Not paid</Badge> : <Badge tone="warning" icon="clock">Pending</Badge>}

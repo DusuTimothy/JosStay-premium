@@ -11,6 +11,7 @@ export function PriceSummary({
   pickup = false,
   bundle = false,
   flight = null,
+  paymentFee = 0,
   className = "",
   compact = false,
 }) {
@@ -44,6 +45,9 @@ export function PriceSummary({
       value: `−${format(quote.discount)}`,
       discount: true,
     });
+  }
+  if (paymentFee > 0) {
+    rows.push({ label: "Payment fee", value: format(paymentFee) });
   }
 
   return (
@@ -80,7 +84,7 @@ export function PriceSummary({
       <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
         <p className="text-[15px] font-bold text-ink">Total ({currency})</p>
         <p className="text-[17px] font-bold text-ink">
-          {format(quote.total + flightTotal)}
+          {format(quote.total + flightTotal + paymentFee)}
         </p>
       </div>
 

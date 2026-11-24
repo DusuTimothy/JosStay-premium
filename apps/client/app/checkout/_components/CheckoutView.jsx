@@ -120,6 +120,7 @@ export function CheckoutView() {
           guests: String(draft.guests || 1),
           airportPickup: pickup ? "true" : "false",
           bundle: draft.bundle ? "true" : "false",
+          paymentMethod: method,
         });
         if (draft.roomId) qs.set("roomId", draft.roomId);
         const res = await api.get(`/api/properties/${encodeURIComponent(property.slug)}/quote?${qs.toString()}`, { cache: "no-store" });
@@ -131,7 +132,7 @@ export function CheckoutView() {
       }
     })();
     return () => { active = false; };
-  }, [property?.slug, draft?.checkIn, draft?.checkOut, draft?.roomId, draft?.guests, draft?.bundle, pickup]);
+  }, [property?.slug, draft?.checkIn, draft?.checkOut, draft?.roomId, draft?.guests, draft?.bundle, pickup, method]);
 
   const quote = serverQuote || (property && draft ? {
     nightly: property?.price || 0,
@@ -139,6 +140,7 @@ export function CheckoutView() {
     subtotal: (property?.price || 0) * (nightsBetween(draft.checkIn, draft.checkOut) || 0),
     cleaning: 0, service: 0, pickup: pickup ? 0 : 0, discount: 0,
     total: (property?.price || 0) * (nightsBetween(draft.checkIn, draft.checkOut) || 0),
+    paymentFee: 0,
     room: (property?.rooms || []).find((r) => r.id === draft.roomId) || property?.rooms?.[0] || null,
   } : null);
 
@@ -206,7 +208,7 @@ export function CheckoutView() {
             key: paystackPublicKey,
             email: payment.email || payload.guest.email,
             amountKobo: payment.amountKobo,
-            amount: payment.amount ?? booking?.total,
+            amount: payment.amount ?? ((booking?.total || 0) + (booking?.paymentFee || 0)),
             reference: payment.reference,
             currency: payment.currency || booking?.currency || "NGN",
             method,
@@ -321,7 +323,7 @@ export function CheckoutView() {
     );
   }
 
-  const grandTotal = quote.total;
+  const grandTotal = (quote.total || 0) + (quote.paymentFee || 0);
 
   return (
     <div className="container-page pb-32 pt-6 lg:pb-16 lg:pt-8">
@@ -459,7 +461,7 @@ export function CheckoutView() {
         <aside>
           <div className="sticky top-24 space-y-3">
             <div className="rounded-xl border border-line bg-white p-5 shadow-card">
-              <PriceSummary quote={quote} checkIn={draft.checkIn} checkOut={draft.checkOut} pickup={pickup} bundle={Boolean(draft.bundle)} flight={draft.bundleFlight} />
+              <PriceSummary quote={quote} checkIn={draft.checkIn} checkOut={draft.checkOut} pickup={pickup} bundle={Boolean(draft.bundle)} flight={draft.bundleFlight} paymentFee={quote.paymentFee || 0} />
               {quoteLoading && <p className="mt-2 text-[11px] text-muted">Updating price…</p>}
             </div>
 

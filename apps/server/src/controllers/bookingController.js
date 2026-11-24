@@ -29,6 +29,11 @@ import {
 
 const sampleData = DATA_BACKEND === "demo";
 
+// Amount actually charged through Paystack: stay total plus the guest-borne
+// processing fee. bookings.total itself stays as the stay amount.
+const chargeAmountFor = (booking) =>
+  Math.max(0, Number(booking?.total || 0)) + Math.max(0, Number(booking?.paymentFee || 0));
+
 const buildPaymentReference = (bookingReference) => {
   const suffix = crypto.randomBytes(4).toString("hex").toUpperCase();
   return `${bookingReference}-${Date.now().toString(36).toUpperCase()}-${suffix}`;
@@ -151,7 +156,7 @@ export const createBooking = asyncHandler(async (req, res) => {
 
       const init = await initializePaystackTransaction({
         email: booking.guest?.email || payload.guest.email,
-        amountKobo: toKobo(booking.total),
+        amountKobo: toKobo(chargeAmountFor(booking)),
         reference: paymentReference,
         callbackUrl,
         metadata: {
@@ -164,7 +169,7 @@ export const createBooking = asyncHandler(async (req, res) => {
       await upsertPaymentForBooking({
         booking,
         paymentReference,
-        amount: booking.total,
+        amount: chargeAmountFor(booking),
         currency: booking.currency || "NGN",
         status: "initialized",
         authorizationUrl: init.authorization_url || null,
@@ -187,8 +192,8 @@ export const createBooking = asyncHandler(async (req, res) => {
         status: "initialized",
         authorizationUrl: init.authorization_url || null,
         accessCode: init.access_code || null,
-        amount: booking.total,
-        amountKobo: toKobo(booking.total),
+        amount: chargeAmountFor(booking),
+        amountKobo: toKobo(chargeAmountFor(booking)),
         currency: booking.currency || "NGN",
         email: booking.guest?.email || payload.guest.email,
       };
@@ -209,7 +214,7 @@ export const createBooking = asyncHandler(async (req, res) => {
         provider: "demo",
         status: "paid",
         reference: booking.paymentReference || null,
-        amount: booking.total,
+        amount: chargeAmountFor(booking),
         currency: booking.currency || "NGN",
       };
       // Best-effort confirmation notification for demo-paid bookings.
@@ -323,8 +328,8 @@ export const initializeBookingPayment = asyncHandler(async (req, res) => {
         status: "initialized",
         authorizationUrl: reusable.authorization_url || null,
         accessCode: reusable.access_code || null,
-        amount: updatedBooking?.total ?? booking.total,
-        amountKobo: toKobo(updatedBooking?.total ?? booking.total),
+        amount: chargeAmountFor(updatedBooking || booking),
+        amountKobo: toKobo(chargeAmountFor(updatedBooking || booking)),
         currency: updatedBooking?.currency || booking.currency || "NGN",
         email:
           updatedBooking?.guest?.email ||
@@ -349,7 +354,7 @@ export const initializeBookingPayment = asyncHandler(async (req, res) => {
 
     const init = await initializePaystackTransaction({
       email: booking.guest?.email,
-      amountKobo: toKobo(booking.total),
+      amountKobo: toKobo(chargeAmountFor(booking)),
       reference: paymentReference,
       callbackUrl,
       metadata: {
@@ -363,7 +368,7 @@ export const initializeBookingPayment = asyncHandler(async (req, res) => {
     await upsertPaymentForBooking({
       booking,
       paymentReference,
-      amount: booking.total,
+      amount: chargeAmountFor(booking),
       currency: booking.currency || "NGN",
       status: "initialized",
       authorizationUrl: init.authorization_url || null,
@@ -386,8 +391,8 @@ export const initializeBookingPayment = asyncHandler(async (req, res) => {
       status: "initialized",
       authorizationUrl: init.authorization_url || null,
       accessCode: init.access_code || null,
-      amount: updatedBooking?.total ?? booking.total,
-      amountKobo: toKobo(updatedBooking?.total ?? booking.total),
+      amount: chargeAmountFor(updatedBooking || booking),
+      amountKobo: toKobo(chargeAmountFor(updatedBooking || booking)),
       currency: updatedBooking?.currency || booking.currency || "NGN",
       email: updatedBooking?.guest?.email || booking.guest?.email || null,
     };

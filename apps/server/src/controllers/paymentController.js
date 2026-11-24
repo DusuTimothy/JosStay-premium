@@ -16,6 +16,11 @@ import {
 
 const sampleData = DATA_BACKEND === "demo";
 
+// The amount charged through Paystack is the stay total plus the guest-borne
+// processing fee. Commission and host earnings stay based on the stay total.
+const chargedAmountFor = (booking) =>
+  Math.max(0, Number(booking?.total || 0)) + Math.max(0, Number(booking?.paymentFee || 0));
+
 const normalizePaystackStatus = (status) => String(status || "").toLowerCase();
 
 const buildEventKey = (event, reference) => {
@@ -150,13 +155,13 @@ const confirmSuccessfulPayment = async ({
 
   const paymentAmount = Math.round((Number(amountKobo) || 0) / 100);
   const paidAtValue = paidAt || new Date().toISOString();
-  const expectedKobo = Math.round(Number(booking.total || 0) * 100);
+  const expectedKobo = Math.round(chargedAmountFor(booking) * 100);
 
   const recordReviewPayment = async ({
     status = "paid",
     requiresRefund = false,
     refundReason = null,
-    amount = paymentAmount || booking.total || 0,
+    amount = paymentAmount || chargedAmountFor(booking) || 0,
   }) => {
     await upsertPaymentRecord({
       provider,
@@ -308,7 +313,7 @@ const confirmSuccessfulPayment = async ({
     bookingId: booking.id || null,
     bookingReference,
     reference: paymentReference,
-    amount: booking.total || paymentAmount,
+    amount: chargedAmountFor(booking) || paymentAmount,
     currency: booking.currency || "NGN",
     status: "paid",
     channel: channel || null,
@@ -396,7 +401,7 @@ export const verifyPaystackPayment = asyncHandler(async (req, res) => {
       bookingId: booking.id || null,
       bookingReference,
       reference,
-      amount: booking.total || Math.round(Number(transaction?.amount || 0) / 100),
+      amount: chargedAmountFor(booking) || Math.round(Number(transaction?.amount || 0) / 100),
       currency: booking.currency || "NGN",
       status: status === "failed" ? "failed" : status === "abandoned" ? "abandoned" : "initialized",
       channel: transaction?.channel || null,
@@ -487,7 +492,7 @@ export const handlePaystackWebhook = asyncHandler(async (req, res) => {
           bookingId: booking?.id || null,
           bookingReference,
           reference,
-          amount: booking?.total || Math.round(Number(data.amount || 0) / 100),
+          amount: chargedAmountFor(booking) || Math.round(Number(data.amount || 0) / 100),
           currency: booking?.currency || data.currency || "NGN",
           status: normalizePaystackStatus(data.status) === "failed" ? "failed" : "initialized",
           channel: data.channel || null,

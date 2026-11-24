@@ -171,7 +171,7 @@ export function BookingsView() {
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="font-display text-[17px] font-bold leading-none text-ink">{format(booking.total || 0)}</p>
+                        <p className="font-display text-[17px] font-bold leading-none text-ink">{format((booking.total || 0) + (booking.paymentFee || 0))}</p>
                         <p className="mt-1 text-[10px] text-muted">{booking.paymentStatus === "paid" ? "Paid" : statusLabel(booking)}</p>
                       </div>
                     </div>

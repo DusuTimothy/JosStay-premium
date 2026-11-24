@@ -133,6 +133,7 @@ export const mapBookingRow = (row, { includeInternal = false } = {}) => {
     ...(row.requests ? { requests: row.requests } : {}),
     status: row.status,
     total: row.total,
+    paymentFee: Math.max(0, Math.round(Number(row.payment_fee ?? row.paymentFee ?? 0) || 0)),
     currency: row.currency || "NGN",
     quote: row.quote,
     createdAt: toDateTimeString(row.created_at || row.createdAt),

@@ -20,7 +20,10 @@ export async function sendBookingConfirmationEmail(booking) {
   const room = esc(booking.roomName || "Selected room");
   const checkIn = esc(booking.checkIn || "");
   const checkOut = esc(booking.checkOut || "");
-  const total = esc(formatNaira(booking.total));
+  const paymentFee = Math.max(0, Number(booking.paymentFee || 0));
+  const chargedTotal = Number(booking.total || 0) + paymentFee;
+  const total = esc(formatNaira(chargedTotal));
+  const feeLine = paymentFee > 0 ? `Payment fee: ${formatNaira(paymentFee)}` : "";
   const guestName = esc([booking?.guest?.firstName, booking?.guest?.lastName].filter(Boolean).join(" ") || "Guest");
 
   const subject = `JosStay booking confirmation ${booking.reference || ""}`.trim();
@@ -33,7 +36,8 @@ export async function sendBookingConfirmationEmail(booking) {
     `Room: ${booking.roomName || ""}`,
     `Check-in: ${booking.checkIn || ""}`,
     `Check-out: ${booking.checkOut || ""}`,
-    `Total: ${formatNaira(booking.total)}`,
+    ...(feeLine ? [feeLine] : []),
+    `Total: ${formatNaira(chargedTotal)}`,
     "",
     "Thank you for booking with JosStay.",
   ].join("\n");
@@ -48,6 +52,7 @@ export async function sendBookingConfirmationEmail(booking) {
         <tr><td><strong>Room</strong></td><td>${room}</td></tr>
         <tr><td><strong>Check-in</strong></td><td>${checkIn}</td></tr>
         <tr><td><strong>Check-out</strong></td><td>${checkOut}</td></tr>
+        ${paymentFee > 0 ? `<tr><td><strong>Payment fee</strong></td><td>${esc(formatNaira(paymentFee))}</td></tr>` : ""}
         <tr><td><strong>Total</strong></td><td>${total}</td></tr>
       </table>
       <p style="margin-top:16px">Thank you for booking with JosStay.</p>

@@ -2,6 +2,7 @@ import { quoteStay } from "@josstay/shared";
 import { z } from "zod";
 import { DATA_BACKEND } from "../config/env.js";
 import { HttpError, asyncHandler } from "../lib/http.js";
+import { calculateCharge } from "../lib/paymentFees.js";
 import {
   getPropertyAvailability as loadAvailability,
   getPropertyContext,
@@ -22,6 +23,7 @@ const QuoteQuerySchema = z.object({
     .union([z.boolean(), z.string()])
     .optional()
     .transform((value) => value === true || value === "true" || value === "1"),
+  paymentMethod: z.enum(["card", "bank", "ussd"]).default("card"),
 });
 
 const sampleData = DATA_BACKEND === "demo";
@@ -85,9 +87,16 @@ export const getPropertyQuote = asyncHandler(async (req, res) => {
     bundleDiscount: Boolean(query.bundle),
   });
 
+  const charge = calculateCharge(quote.total, query.paymentMethod);
+
   res.json({
     data: {
-      quote,
+      quote: {
+        ...quote,
+        paymentFee: charge.paymentFee,
+        chargeTotal: charge.chargeAmount,
+        paymentMethod: query.paymentMethod,
+      },
       property: {
         slug: context.property.slug,
         name: context.property.name,
