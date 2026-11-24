@@ -56,15 +56,34 @@ How that total is split:
 | Extras (airport pickup, etc.) | Per policy — confirm |
 | Discounts | Reduce the charge before splitting |
 | **Commission (10%)** | **Platform — deducted from the host's share, never added to the guest** |
-| **Paystack processing fee** | Charged by Paystack on the transaction (deducted from platform settlement). Not added to the guest as a line item. |
+| **Paystack processing fee** | **Guest — passed through at checkout.** Platform absorbs it only when a refund happens. |
 
 So:
 ```
 host_gross      = nightly subtotal + cleaning (+ confirmed extras)
 commission      = 10% of host_gross
 host_net        = host_gross − commission        <- this is what the ledger tracks
-platform_revenue = commission − Paystack fee
+platform_revenue = commission
+                   − Paystack fee (only when the platform absorbs it, e.g. refunds)
 ```
+
+### Payment fee pass-through
+
+The guest bears Paystack's processing fee. Because Paystack deducts its fee from the settlement, the charge must be **grossed up** so the platform nets the intended amount:
+
+```
+charge = (desired_amount + fixed_fee) / (1 − rate)
+charge = min(charge, desired_amount + fee_cap)
+```
+
+Rules:
+- Fee rate/fixed/cap are **configurable per payment channel** (card, bank transfer, USSD) — do not hardcode provider pricing in UI.
+- Compute server-side at payment initialization and store the fee on the payment/booking record.
+- The fee is **pass-through**: it is not host gross, not commissionable, and not platform revenue.
+- If the guest abandons or fails payment, no fee is charged.
+- **Refunds:** Paystack generally does not return its processing fee, so on a refund the platform absorbs it (and may deduct it from the refunded amount only if your refund policy says so — confirm).
+
+> **Confirm before implementing:** the exact fee schedule per channel, whether the fee is shown as a separate "Payment fee" line or baked into the total, and whether passing fees to customers is permitted under your Paystack agreement/card scheme rules.
 
 Store `gross`, `commission`, and `net` per earning row (do not recompute later, so rate changes don't rewrite history).
 
@@ -339,5 +358,5 @@ All endpoints require auth. Host endpoints require `host` role and the caller's 
 5. Minimum payout amount and any payout fee?
 6. Do we need a host-visible invoice/statement export?
 7. ~~**Service fee:** keep the existing 7% guest-facing service fee in addition to the 10% host commission, or fold it into commission so guests only pay the nightly/cleaning total?~~ **Resolved:** service fee removed; guests pay nightly + cleaning only.
-8. **Paystack fee bearer:** platform absorbs the processing fee (default), or deduct it from the host's net?
+8. ~~**Paystack fee bearer:** platform absorbs the processing fee (default), or deduct it from the host's net?~~ **Resolved:** guest bears the Paystack processing fee (passed through); platform absorbs it only on refunds. Still to confirm: per-channel fee schedule, display as a line item vs baked into total, and whether pass-through is permitted under the Paystack/card-scheme terms.
 9. **Extras:** do cleaning and airport pickup count toward the host's gross and commission base, or are they platform revenue?
