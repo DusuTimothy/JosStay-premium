@@ -187,6 +187,13 @@ Step-by-step checklist for taking **JosStay Premium** from demo/prototype to a l
 
 ---
 
+## Pipeline (planned, not started)
+
+- [ ] **Analytics overview (host + admin):** aggregate stats endpoints (`/api/host/stats`, `/api/admin/stats`) with date ranges; dashboard cards plus monthly revenue/booking charts. Core numbers can come from existing tables (`bookings`, `payments`, `properties`, `rooms`, `profiles`, `payouts`); no new tables needed. Traffic/funnel metrics would additionally need event tracking.
+- [ ] **Cookie consent + cookie policy:** consent banner with Accept all / Reject non-essential / Manage preferences, stored choice with policy version, gated loading of non-essential scripts, and a cookie policy page. Needed before adding any analytics, ads, or marketing pixels. Essential auth refresh cookie stays exempt but must be disclosed.
+
+---
+
 ## Repo-specific starting points
 
 - **Server entry/config:** `apps/server/src/index.js`, `apps/server/src/app.js`, `apps/server/src/config/env.js`
