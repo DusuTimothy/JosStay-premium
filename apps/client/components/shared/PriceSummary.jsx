@@ -32,8 +32,7 @@ export function PriceSummary({
       label: `${format(quote.nightly)} × ${quote.nights} night${quote.nights === 1 ? "" : "s"}`,
       value: format(quote.subtotal),
     },
-    { label: "Cleaning fee", value: format(quote.cleaning) },
-    { label: "Service fee", value: format(quote.service) }
+    { label: "Cleaning fee", value: format(quote.cleaning) }
   );
 
   if (pickup && quote.pickup) {

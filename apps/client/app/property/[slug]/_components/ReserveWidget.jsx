@@ -12,7 +12,6 @@ export function ReserveWidget({ property, state, setState, quote, quoteLoading, 
   const nights = quote?.nights ?? 0;
   const subtotal = quote?.subtotal ?? 0;
   const cleaning = quote?.cleaning ?? 0;
-  const service = quote?.service ?? 0;
   const total = quote?.total ?? 0;
 
   return (
@@ -61,10 +60,6 @@ export function ReserveWidget({ property, state, setState, quote, quoteLoading, 
         <div className="flex items-center justify-between gap-3">
           <span className="text-muted">Cleaning fee</span>
           <span className="font-medium text-ink">{quoteLoading ? "…" : format(cleaning)}</span>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-muted">Service fee</span>
-          <span className="font-medium text-ink">{quoteLoading ? "…" : format(service)}</span>
         </div>
       </div>
 

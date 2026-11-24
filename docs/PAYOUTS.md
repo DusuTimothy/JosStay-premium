@@ -42,8 +42,10 @@ The guest is charged **once**, at checkout, through Paystack. No commission line
 
 Current guest total (`quoteStay`):
 ```
-total = nightly subtotal + cleaning fee + service fee (7%) + extras − discounts
+total = nightly subtotal + cleaning fee + extras − discounts
 ```
+
+> **Decision (2026-11-24):** the guest-facing 7% service fee was removed. Guests pay nightly + cleaning (+ extras). The platform earns from host commission only.
 
 How that total is split:
 
@@ -51,7 +53,6 @@ How that total is split:
 |---|---|
 | Nightly subtotal | Host (minus commission) |
 | Cleaning fee | Host (it covers cleaning) |
-| Service fee (7%) | Platform |
 | Extras (airport pickup, etc.) | Per policy — confirm |
 | Discounts | Reduce the charge before splitting |
 | **Commission (10%)** | **Platform — deducted from the host's share, never added to the guest** |
@@ -62,7 +63,7 @@ So:
 host_gross      = nightly subtotal + cleaning (+ confirmed extras)
 commission      = 10% of host_gross
 host_net        = host_gross − commission        <- this is what the ledger tracks
-platform_revenue = commission + service fee − Paystack fee
+platform_revenue = commission − Paystack fee
 ```
 
 Store `gross`, `commission`, and `net` per earning row (do not recompute later, so rate changes don't rewrite history).
@@ -337,6 +338,6 @@ All endpoints require auth. Host endpoints require `host` role and the caller's 
 4. Who may approve payouts — any admin, or a finance role?
 5. Minimum payout amount and any payout fee?
 6. Do we need a host-visible invoice/statement export?
-7. **Service fee:** keep the existing 7% guest-facing service fee in addition to the 10% host commission, or fold it into commission so guests only pay the nightly/cleaning total?
+7. ~~**Service fee:** keep the existing 7% guest-facing service fee in addition to the 10% host commission, or fold it into commission so guests only pay the nightly/cleaning total?~~ **Resolved:** service fee removed; guests pay nightly + cleaning only.
 8. **Paystack fee bearer:** platform absorbs the processing fee (default), or deduct it from the host's net?
 9. **Extras:** do cleaning and airport pickup count toward the host's gross and commission base, or are they platform revenue?

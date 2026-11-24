@@ -5,7 +5,6 @@
  */
 
 export const USD_RATE = 1550; // indicative: ₦1,550 = $1
-export const SERVICE_FEE_RATE = 0.07;
 export const AIRPORT_PICKUP_FEE = 12000;
 export const BUNDLE_DISCOUNT_RATE = 0.1;
 
@@ -426,12 +425,11 @@ export const quoteStay = (property, checkIn, checkOut, options = {}) => {
   const nightly = room.price;
   const subtotal = nightly * nights;
   const cleaning = property.cleaningFee ?? 5000;
-  const service = Math.round(subtotal * SERVICE_FEE_RATE);
   const pickup = options.airportPickup ? AIRPORT_PICKUP_FEE : 0;
   const discount = options.bundleDiscount
-    ? Math.round((subtotal + cleaning + service) * BUNDLE_DISCOUNT_RATE)
+    ? Math.round((subtotal + cleaning) * BUNDLE_DISCOUNT_RATE)
     : 0;
-  const total = subtotal + cleaning + service + pickup - discount;
+  const total = subtotal + cleaning + pickup - discount;
 
   return {
     room,
@@ -439,7 +437,7 @@ export const quoteStay = (property, checkIn, checkOut, options = {}) => {
     nightly,
     subtotal,
     cleaning,
-    service,
+    service: 0,
     pickup,
     discount,
     total,

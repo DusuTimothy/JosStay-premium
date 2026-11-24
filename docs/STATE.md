@@ -16,6 +16,7 @@ _Last updated: 2026-11-24. Keep this short; update it at the end of each working
 
 ## Bookings / payments
 - Server-priced bookings; idempotency keys; Paystack init/verify/webhook (HMAC SHA512).
+- Guest price = nightly + cleaning (+ extras) − discounts. The 7% guest service fee was removed; the platform earns 10% host commission only.
 - Checkout link reuse per booking; unpaid pending bookings expire to `abandoned` after `PAYMENT_PENDING_TTL_MINUTES` (default 30).
 - Money safety: amount mismatch, duplicate successful charge, and late success on unavailable dates are recorded as `metadata.requiresRefund=true` instead of silently ignored.
 - **Refunds are manual only** — no Paystack refund API calls. Runbook: `docs/REFUND_RUNBOOK.md`.

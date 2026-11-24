@@ -585,8 +585,8 @@ function PropertyDetailContent({ property }) {
                 <span className="font-medium text-ink">{format(quote.subtotal || 0)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted">Fees</span>
-                <span className="font-medium text-ink">{format((quote.cleaning || 0) + (quote.service || 0))}</span>
+                <span className="text-muted">Cleaning fee</span>
+                <span className="font-medium text-ink">{format(quote.cleaning || 0)}</span>
               </div>
               <div className="flex justify-between border-t border-line pt-2">
                 <span className="font-bold text-ink">Total</span>
