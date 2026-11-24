@@ -52,8 +52,8 @@ Server scripts that hit the DB may need `DB_FORCE_IPV4=true` in this environment
 ## Open work
 See `docs/PRODUCTION_READINESS.md` for the full checklist. Current priorities:
 1. Run `db:migrate` before/with the next deploy — `20261124120000_booking_payment_fee.sql` (booking queries read `bookings.payment_fee`) and `20261124130000_host_payouts_phase1.sql` (payout ledger/tables). Then confirm Vercel/Render deployed latest `main`; Render start command + `REDIS_URL`/TLS vars.
-2. Live Brevo test (signup verification + password reset emails).
-3. Paystack live keys + webhook configured in dashboard; controlled live payment test.
+2. Brevo test (direct API, signup verification, password reset) — procedure in `docs/TESTING.md`.
+3. Paystack test-mode checks and controlled live payment — procedure in `docs/TESTING.md`.
 4. Rotate exposed secrets (Cloudinary, Brevo, admin password, DB credentials).
 5. Real inventory import (`db/listings.json` → dry-run → import → `db:clear-sample`).
 6. Demo/placeholder cleanup — **on hold** (user asked to defer).
