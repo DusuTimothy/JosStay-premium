@@ -36,8 +36,38 @@ Give hosts a real payout flow and give admins a reviewable, auditable queue — 
 
 ## 4. Money model
 
-### Commission
-Platform commission is **10%** of gross, matching the current dashboard copy. Store commission per earning row (do not recompute later, so rate changes don't rewrite history).
+### Money flow — who pays what
+
+The guest is charged **once**, at checkout, through Paystack. No commission line is added to the guest's bill.
+
+Current guest total (`quoteStay`):
+```
+total = nightly subtotal + cleaning fee + service fee (7%) + extras − discounts
+```
+
+How that total is split:
+
+| Component | Goes to |
+|---|---|
+| Nightly subtotal | Host (minus commission) |
+| Cleaning fee | Host (it covers cleaning) |
+| Service fee (7%) | Platform |
+| Extras (airport pickup, etc.) | Per policy — confirm |
+| Discounts | Reduce the charge before splitting |
+| **Commission (10%)** | **Platform — deducted from the host's share, never added to the guest** |
+| **Paystack processing fee** | Charged by Paystack on the transaction (deducted from platform settlement). Not added to the guest as a line item. |
+
+So:
+```
+host_gross      = nightly subtotal + cleaning (+ confirmed extras)
+commission      = 10% of host_gross
+host_net        = host_gross − commission        <- this is what the ledger tracks
+platform_revenue = commission + service fee − Paystack fee
+```
+
+Store `gross`, `commission`, and `net` per earning row (do not recompute later, so rate changes don't rewrite history).
+
+> **Decision needed:** whether the platform absorbs the Paystack processing fee or deducts it from host net. Default assumption in this spec: **platform absorbs it** (host net is unaffected by Paystack fees).
 
 ### Earning availability
 An earning becomes withdrawable only when:
@@ -307,3 +337,6 @@ All endpoints require auth. Host endpoints require `host` role and the caller's 
 4. Who may approve payouts — any admin, or a finance role?
 5. Minimum payout amount and any payout fee?
 6. Do we need a host-visible invoice/statement export?
+7. **Service fee:** keep the existing 7% guest-facing service fee in addition to the 10% host commission, or fold it into commission so guests only pay the nightly/cleaning total?
+8. **Paystack fee bearer:** platform absorbs the processing fee (default), or deduct it from the host's net?
+9. **Extras:** do cleaning and airport pickup count toward the host's gross and commission base, or are they platform revenue?
