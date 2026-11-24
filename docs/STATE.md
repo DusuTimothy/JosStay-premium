@@ -48,7 +48,7 @@ See `docs/PRODUCTION_READINESS.md` for the full checklist. Current priorities:
 4. Rotate exposed secrets (Cloudinary, Brevo, admin password, DB credentials).
 5. Real inventory import (`db/listings.json` → dry-run → import → `db:clear-sample`).
 6. Demo/placeholder cleanup — **on hold** (user asked to defer).
-7. Payout request flow — not built; support-only placeholder. Needs product scoping.
+7. Payout request flow — not built; support-only placeholder. Spec written: `docs/PAYOUTS.md` (phase 1 = ledger + request + admin review + manual settlement).
 8. Pipeline: analytics overview (host + admin) and cookie consent + cookie policy.
 
 ## Notes
