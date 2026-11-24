@@ -1,12 +1,21 @@
 import { Router } from "express";
 import {
+  cancelPayoutRequest,
   createListing,
   createListingBlock,
+  createPayoutMethod,
+  createPayoutRequest,
   deleteListingBlock,
+  deletePayoutMethod,
   getHostBookings,
   getHostListings,
   getHostMe,
   getListingBlocks,
+  getPayoutBanks,
+  getPayoutEarnings,
+  getPayoutMethods,
+  getPayoutRequests,
+  getPayoutSummary,
   getPayouts,
   onboardHost,
   registerHost,
@@ -30,6 +39,17 @@ router.get("/listings/:id/blocks", requireAuth, requireRole("host", "admin"), ge
 router.post("/listings/:id/blocks", requireAuth, requireRole("host", "admin"), createListingBlock);
 router.delete("/listings/:id/blocks/:blockId", requireAuth, requireRole("host", "admin"), deleteListingBlock);
 router.get("/bookings", requireAuth, requireRole("host", "admin"), getHostBookings);
+
 router.get("/payouts", requireAuth, requireRole("host", "admin"), getPayouts);
+router.get("/payouts/summary", requireAuth, requireRole("host", "admin"), getPayoutSummary);
+router.get("/payouts/earnings", requireAuth, requireRole("host", "admin"), getPayoutEarnings);
+router.get("/payouts/requests", requireAuth, requireRole("host", "admin"), getPayoutRequests);
+router.post("/payouts/requests", requireAuth, requireRole("host", "admin"), createPayoutRequest);
+router.post("/payouts/requests/:id/cancel", requireAuth, requireRole("host", "admin"), cancelPayoutRequest);
+
+router.get("/payout-methods", requireAuth, requireRole("host", "admin"), getPayoutMethods);
+router.get("/payout-methods/banks", requireAuth, requireRole("host", "admin"), getPayoutBanks);
+router.post("/payout-methods", requireAuth, requireRole("host", "admin"), createPayoutMethod);
+router.delete("/payout-methods/:id", requireAuth, requireRole("host", "admin"), deletePayoutMethod);
 
 export default router;

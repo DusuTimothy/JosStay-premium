@@ -1,6 +1,6 @@
 # Host Payouts — Design Spec
 
-_Status: proposed. Phase 1 not implemented; current behavior is support-only._
+_Status: Phase 1 implemented (2026-11-24). Phase 2 automated transfers remain deferred._
 
 ## 1. Purpose
 
@@ -21,9 +21,10 @@ Give hosts a real payout flow and give admins a reviewable, auditable queue — 
 ## 2. Current state
 
 - `public.payouts` exists (`host_id`, `reference`, `gross`, `commission`, `net`, `status`, `scheduled_for`) with `payout_status` = `scheduled | paid | on_hold | failed`.
-- Host dashboard shows payout history and a "Request payout" button that only displays a toast.
-- `GET /api/host/payouts` returns payout records for the host (or all for admin).
-- No bank details, no requests, no ledger, no admin queue.
+- Host dashboard has a full Payouts tab: summary, bank verification, request form/history, and earnings ledger.
+- `GET /api/host/payouts` returns settlement records; the new ledger/request APIs are listed in §7.
+- Admin review lives at `/account/admin/payouts` (legacy `/admin/payouts` redirects).
+- Phase 1 uses manual settlement only; no Paystack transfer API is called.
 
 ## 3. Design principles
 
@@ -241,7 +242,7 @@ Terminal states: `paid`, `rejected`, `cancelled`. `failed` is terminal for the r
 
 ## 7. API design
 
-All endpoints require auth. Host endpoints require `host` role and the caller's own host record. Admin endpoints require `admin`. All mutations require `X-JosStay-Request: 1` (existing CSRF guard) and support `Idempotency-Key`.
+All endpoints require auth. Host endpoints require `host` role and the caller's own host record. Admin endpoints require `admin`. All mutations are sent with `X-JosStay-Request: 1` by the client helper. `POST /api/host/payouts/requests` requires `Idempotency-Key` when the database backend is enabled; the other mutations are single-state transitions guarded by row locks.
 
 ### Host
 | Method | Path | Purpose |
@@ -263,7 +264,8 @@ All endpoints require auth. Host endpoints require `host` role and the caller's 
 | PATCH | `/api/admin/payouts/requests/:id/approve` | `{ note }` |
 | PATCH | `/api/admin/payouts/requests/:id/reject` | `{ note }` (required) |
 | PATCH | `/api/admin/payouts/requests/:id/mark-paid` | `{ providerReference, note }` (phase 1) |
-| GET | `/api/admin/payouts/hosts/:hostId/ledger` | Host ledger for support |
+
+A dedicated host-ledger support endpoint is not needed yet: each request detail already includes its earning breakdown.
 
 ### Phase 2
 | Method | Path | Purpose |
@@ -276,8 +278,8 @@ All endpoints require auth. Host endpoints require `host` role and the caller's 
 1. **Request creation** (single transaction):
    - Lock the host's available earnings (`select ... for update`).
    - Validate `amount >= minimum` and `amount <= withdrawable`.
-   - Select earnings to reserve, oldest first, until the amount is covered. Partial earning splitting is allowed at the row level only if needed; otherwise require exact sums.
-   - Set those rows to `reserved` with `payout_request_id`.
+   - Select earnings to reserve, oldest first, until the amount is covered. Partial earning splitting is allowed at the row level.
+   - Record each reserved slice in `payout_request_earnings`; fully reserved earning rows move to `reserved`.
    - Insert the request with a `bank_snapshot`.
 2. **Only one open request per host** (`pending_review`/`approved`/`processing`).
 3. **Bank details required** and `status = 'verified'` before requesting.
@@ -323,7 +325,7 @@ All endpoints require auth. Host endpoints require `host` role and the caller's 
 | Host edits bank while request open | Blocked |
 | Host cancels after approval | Not allowed; admin must reject/fail |
 | Duplicate submit / retry | Idempotency key + one-open-request rule |
-| Earnings partially cover request | Reserve oldest rows; reject if exact coverage not possible (phase 1) |
+| Earnings partially cover request | Reserve oldest rows; split the final row if needed and reject if available balance is insufficient |
 | Booking refunded after payout | Flag for admin, do not auto-debit |
 | Webhook arrives twice | Unique event key (existing webhook dedupe pattern) |
 | Provider timeout on transfer | Keep `processing`, reconcile before retry |
@@ -341,15 +343,15 @@ All endpoints require auth. Host endpoints require `host` role and the caller's 
 
 ## 13. Rollout
 
-**Phase 1 (recommended first)**
-1. Migration: `host_earnings`, `host_bank_accounts`, `payout_requests` (+ optional `payouts.payout_request_id`).
-2. Backfill earnings for existing paid bookings.
-3. Host API + UI (summary, earnings, bank details, request, history).
-4. Admin API + queue page.
-5. Manual mark-paid flow.
-6. Tests: reservation math, double-request prevention, reject release, refund interaction.
+**Phase 1 — implemented (2026-11-24)**
+1. Migration `db/migrations/20261124130000_host_payouts_phase1.sql`: `host_earnings`, `host_bank_accounts`, `payout_requests`, `payout_request_earnings`, and `payouts.payout_request_id`. **Run `db:migrate` before deploying.**
+2. Existing paid bookings are backfilled into `host_earnings` lazily on first summary/ledger/queue read (`syncEarnings`).
+3. Host API + UI (`PayoutsPanel`) cover summary, earnings, verified bank account, request form/history, and cancellation while pending.
+4. Admin API + queue page at `/account/admin/payouts` show host, masked bank snapshot, and earning breakdown; approve/reject/mark-paid are audited.
+5. Manual mark-paid writes a `payouts` row and stores the Paystack transfer reference. No transfer is initiated by the app.
+6. Verification performed: server `node --check` and the client production build. Live DB migration and end-to-end smoke tests remain.
 
-**Phase 2**
+**Phase 2 — deferred**
 7. Paystack recipient + transfer integration.
 8. Transfer webhooks + reconciliation.
 9. Alerting for failed/reversed transfers.

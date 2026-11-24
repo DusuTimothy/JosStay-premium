@@ -1,5 +1,13 @@
 import { asyncHandler, HttpError } from "../lib/http.js";
+import {
+  beginIdempotency,
+  completeIdempotency,
+  failIdempotency,
+  getIdempotencyKey,
+  hashIdempotencyPayload,
+} from "../lib/idempotency.js";
 import { sendHostListingSubmittedEmail, sendHostWelcomeEmail } from "../lib/notifications.js";
+import { isDatabaseEnabled } from "../lib/postgres.js";
 import { createUser, findUserByEmail, findUserById, publicUser, touchLastLogin } from "../store/userStore.js";
 import {
   createHostListing,
@@ -14,7 +22,18 @@ import {
   updateHostListing,
   updateHostListingPricing,
 } from "../store/hostStore.js";
-import { getPayoutRecords } from "../store/payoutStore.js";
+import {
+  cancelHostPayoutRequest,
+  createHostPayoutMethod,
+  createHostPayoutRequest,
+  disableHostPayoutMethod,
+  getHostPayoutMethods,
+  getHostPayoutSummary,
+  getPayoutRecords,
+  listHostEarnings,
+  listHostPayoutRequests,
+  listPayoutBanks,
+} from "../store/payoutStore.js";
 import {
   HostListingBlockSchema,
   HostListingCreateSchema,
@@ -24,6 +43,10 @@ import {
   HostOnboardSchema,
   HostRegisterSchema,
 } from "../validators/hostSchemas.js";
+import {
+  PayoutMethodCreateSchema,
+  PayoutRequestCreateSchema,
+} from "../validators/payoutSchemas.js";
 import { createRefreshSession, setRefreshCookie } from "../lib/authSession.js";
 import { signAccessToken } from "../lib/tokens.js";
 
@@ -45,6 +68,112 @@ const issueAuth = async ({ req, res, user, status = 200, message }) => {
 export const getPayouts = asyncHandler(async (req, res) => {
   const result = await getPayoutRecords(req.auth);
   res.json(result);
+});
+
+export const getPayoutSummary = asyncHandler(async (req, res) => {
+  const result = await getHostPayoutSummary(req.auth);
+  res.json(result);
+});
+
+export const getPayoutEarnings = asyncHandler(async (req, res) => {
+  const result = await listHostEarnings(req.auth, {
+    status: req.query.status ? String(req.query.status) : undefined,
+    limit: req.query.limit ? Number(req.query.limit) : undefined,
+    offset: req.query.offset ? Number(req.query.offset) : undefined,
+  });
+  res.json(result);
+});
+
+export const getPayoutRequests = asyncHandler(async (req, res) => {
+  const result = await listHostPayoutRequests(req.auth, {
+    status: req.query.status ? String(req.query.status) : undefined,
+    limit: req.query.limit ? Number(req.query.limit) : undefined,
+  });
+  res.json(result);
+});
+
+export const createPayoutRequest = asyncHandler(async (req, res) => {
+  const payload = PayoutRequestCreateSchema.parse(req.body || {});
+  const idempotencyKey = getIdempotencyKey(req);
+  const scope = `user:${req.auth.userId}:host:payout-request`;
+  const requestHash = hashIdempotencyPayload(payload);
+
+  let idem = { type: "skipped" };
+  if (isDatabaseEnabled) {
+    if (!idempotencyKey) {
+      throw new HttpError(400, "Idempotency-Key header is required for payout requests");
+    }
+    idem = await beginIdempotency({
+      scope,
+      key: idempotencyKey,
+      operation: "host.payout.request",
+      requestHash,
+    });
+    if (idem.type === "replay") {
+      return res.status(idem.status || 200).json(idem.body);
+    }
+  }
+
+  try {
+    const result = await createHostPayoutRequest({
+      auth: req.auth,
+      amount: payload.amount,
+      note: payload.note,
+    });
+    const body = { data: result.data, sampleData: result.sampleData };
+    if (idem.type === "claimed") {
+      await completeIdempotency({ scope, key: idempotencyKey, status: 201, body });
+    }
+    return res.status(201).json(body);
+  } catch (error) {
+    if (idem.type === "claimed") {
+      const status = error instanceof HttpError ? error.status : 500;
+      await failIdempotency({
+        scope,
+        key: idempotencyKey,
+        status,
+        body: { error: error.message || "Could not create payout request" },
+      }).catch(() => {});
+    }
+    throw error;
+  }
+});
+
+export const cancelPayoutRequest = asyncHandler(async (req, res) => {
+  const result = await cancelHostPayoutRequest({
+    auth: req.auth,
+    requestId: req.params.id,
+  });
+  res.json({ data: result.data, sampleData: result.sampleData });
+});
+
+export const getPayoutMethods = asyncHandler(async (req, res) => {
+  const result = await getHostPayoutMethods(req.auth);
+  res.json(result);
+});
+
+export const getPayoutBanks = asyncHandler(async (_req, res) => {
+  const result = await listPayoutBanks();
+  res.json(result);
+});
+
+export const createPayoutMethod = asyncHandler(async (req, res) => {
+  const payload = PayoutMethodCreateSchema.parse(req.body || {});
+  const result = await createHostPayoutMethod({
+    auth: req.auth,
+    bankCode: payload.bankCode,
+    bankName: payload.bankName,
+    accountNumber: payload.accountNumber,
+  });
+  res.status(201).json({ data: result.data, sampleData: result.sampleData });
+});
+
+export const deletePayoutMethod = asyncHandler(async (req, res) => {
+  const result = await disableHostPayoutMethod({
+    auth: req.auth,
+    methodId: req.params.id,
+  });
+  res.json({ data: result.data, sampleData: result.sampleData });
 });
 
 export const getHostMe = asyncHandler(async (req, res) => {

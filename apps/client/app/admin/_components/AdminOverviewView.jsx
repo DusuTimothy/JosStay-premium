@@ -23,6 +23,12 @@ const cards = [
     title: "Refund review",
     text: "Review payments flagged for manual refund attention and mark them resolved after checking Paystack.",
   },
+  {
+    href: "/account/admin/payouts",
+    icon: "bank",
+    title: "Payout review",
+    text: "Review host payout requests against earnings and record manual Paystack settlement references.",
+  },
 ];
 
 const accountShortcuts = [
@@ -99,7 +105,7 @@ export function AdminOverviewView() {
         <div>
           <span className="eyebrow">Admin</span>
           <h1 className="mt-3 font-display text-[32px] font-bold leading-none tracking-tight text-ink sm:text-[40px]">Admin dashboard</h1>
-          <p className="mt-2 text-sm text-muted">Manage listing reviews and manual refund review from one place.</p>
+          <p className="mt-2 text-sm text-muted">Manage listing reviews, refund review, and host payouts from one place.</p>
           <p className="mt-1 text-[11px] text-muted">{auth.user?.email || ""}</p>
           <AdminNav />
         </div>
@@ -126,7 +132,7 @@ export function AdminOverviewView() {
       </div>
 
       <div className="mt-6 rounded-xl border border-line bg-canvas px-4 py-3 text-[12px] text-muted">
-        Admin actions affect live data. Refunds are tracked here for manual review only — JosStay does not automatically issue Paystack refunds.
+        Admin actions affect live data. Refunds and payouts are handled manually — JosStay does not automatically issue Paystack refunds or transfers.
       </div>
 
       <section className="mt-8 rounded-xl border border-line bg-white p-5 sm:p-6">

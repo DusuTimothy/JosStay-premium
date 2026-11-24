@@ -69,6 +69,22 @@ export const verifyPaystackTransaction = async (reference) => {
   return paystackRequest(`/transaction/verify/${encodeURIComponent(reference)}`);
 };
 
+export const isPaystackConfigured = () => Boolean(PAYSTACK_SECRET_KEY);
+
+export const listPaystackBanks = async () => {
+  const banks = await paystackRequest("/bank?currency=NGN");
+  return Array.isArray(banks) ? banks : [];
+};
+
+export const resolvePaystackAccount = async ({ accountNumber, bankCode }) => {
+  if (!accountNumber || !bankCode) {
+    throw new HttpError(400, "Account number and bank are required");
+  }
+  return paystackRequest(
+    `/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`,
+  );
+};
+
 export const verifyPaystackWebhookSignature = (req) => {
   const signature = req.header("x-paystack-signature");
   if (!signature) return false;

@@ -162,3 +162,59 @@ export const mapPayoutRow = (row) => ({
   ...(row.scheduled_for ? { scheduledFor: toDateString(row.scheduled_for) } : {}),
   createdAt: toDateTimeString(row.created_at),
 });
+
+export const mapHostEarningRow = (row) => ({
+  id: row.id,
+  bookingId: row.booking_id,
+  bookingReference: row.booking_reference,
+  gross: Number(row.gross || 0),
+  commission: Number(row.commission || 0),
+  net: Number(row.net || 0),
+  currency: row.currency || "NGN",
+  status: row.status,
+  availableAt: toDateTimeString(row.available_at),
+  reservedAmount: Number(row.reserved_amount || 0),
+  paidAmount: Number(row.paid_amount || 0),
+  reversedAt: toDateTimeString(row.reversed_at),
+  createdAt: toDateTimeString(row.created_at),
+});
+
+export const mapBankAccountRow = (row) => ({
+  id: row.id,
+  bankCode: row.bank_code,
+  bankName: row.bank_name,
+  accountNumberMasked: row.account_number_masked,
+  accountName: row.account_name,
+  provider: row.provider,
+  status: row.status,
+  verifiedAt: toDateTimeString(row.verified_at),
+  createdAt: toDateTimeString(row.created_at),
+});
+
+export const mapPayoutRequestRow = (row) => ({
+  id: row.id,
+  reference: row.reference,
+  amount: Number(row.amount || 0),
+  currency: row.currency || "NGN",
+  status: row.status,
+  hostNote: row.host_note || null,
+  reviewNote: row.review_note || null,
+  settlementNote: row.settlement_note || null,
+  bank: row.bank_snapshot && typeof row.bank_snapshot === "object" ? row.bank_snapshot : {},
+  provider: row.provider || null,
+  providerReference: row.provider_reference || null,
+  host: row.host_name || row.host_email
+    ? {
+        id: row.host_id || null,
+        name: row.host_name || null,
+        email: row.host_email || null,
+      }
+    : null,
+  earnings: Array.isArray(row.earnings) ? row.earnings : [],
+  reviewedBy: row.reviewed_by || null,
+  reviewedAt: toDateTimeString(row.reviewed_at),
+  settledBy: row.settled_by || null,
+  settledAt: toDateTimeString(row.settled_at),
+  createdAt: toDateTimeString(row.created_at),
+  updatedAt: toDateTimeString(row.updated_at),
+});

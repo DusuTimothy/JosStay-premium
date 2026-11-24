@@ -18,6 +18,7 @@ import { api } from "@/lib/api";
 import { SUPPORT_WHATSAPP_URL } from "@/lib/contact";
 import { EmptyState, ErrorState, LoadingResults } from "@/components/shared/states";
 import { SearchSelect } from "@/components/shared/SearchSelect";
+import { PayoutsPanel } from "./PayoutsPanel";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: "dashboard" },
@@ -73,7 +74,6 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [dashboard, setDashboard] = useState(null);
-  const [payouts, setPayouts] = useState({ data: [], totals: null, sampleData: true });
   const [showForm, setShowForm] = useState(false);
   const [editingListingId, setEditingListingId] = useState("");
   const [submittingListing, setSubmittingListing] = useState(false);
@@ -105,17 +105,9 @@ function Dashboard() {
     if (!silent) setLoading(true);
     setLoadError("");
     try {
-      const [meRes, payoutsRes] = await Promise.all([
-        api.get("/api/host/me", { cache: "no-store" }),
-        api.get("/api/host/payouts", { cache: "no-store" }).catch(() => ({ data: [], totals: null, sampleData: true })),
-      ]);
+      const meRes = await api.get("/api/host/me", { cache: "no-store" });
       setDashboard(meRes?.data || null);
-      setPayouts({
-        data: Array.isArray(payoutsRes?.data) ? payoutsRes.data : [],
-        totals: payoutsRes?.totals || null,
-        sampleData: Boolean(payoutsRes?.sampleData),
-      });
-      return { ok: true, sampleData: Boolean(meRes?.sampleData || payoutsRes?.sampleData) };
+      return { ok: true, sampleData: Boolean(meRes?.sampleData) };
     } catch (error) {
       if (error?.status === 401) {
         setLoadError("auth_required");
@@ -151,7 +143,7 @@ function Dashboard() {
     return () => { active = false; };
   }, [auth.isLoading, auth.isAuthenticated, auth.user, refreshHostData]);
 
-  const isSample = Boolean(dashboard?.sampleData || payouts?.sampleData);
+  const isSample = Boolean(dashboard?.sampleData);
   const listings = useMemo(() => (Array.isArray(dashboard?.listings) ? dashboard.listings : []), [dashboard?.listings]);
   const hostBookings = useMemo(() => (Array.isArray(dashboard?.bookings) ? dashboard.bookings : []), [dashboard?.bookings]);
 
@@ -626,7 +618,6 @@ function Dashboard() {
   }
 
   const recentBookings = hostBookings.slice(0, 6);
-  const payoutRows = payouts?.data?.length ? payouts.data : [];
   const blockedCountInMonth = blockedDatesInMonth.size;
   const monthDays = monthStats.filter(Boolean).length;
 
@@ -983,58 +974,7 @@ function Dashboard() {
       )}
 
       {tab === "payouts" && (
-        <div className="mt-5 space-y-5">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatCard label="Pending" value={format(pending)} hint="Awaiting settlement" icon="wallet" tone="gold" />
-            <StatCard label="Gross earnings" value={format(gross)} hint="Recorded bookings" icon="dashboard" />
-            <StatCard label="Commission" value={format(Math.round(gross * 0.1))} hint="10% platform fee" icon="sliders" />
-            <StatCard label="Net earned" value={format(netPayouts)} hint="After commission" icon="checkCircle" tone="green" />
-          </div>
-
-          <div className="min-w-0 rounded-xl border border-line bg-white p-4 sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0"><h2 className="font-display text-[19px] font-bold tracking-tight text-ink">Payout history</h2><p className="text-xs text-muted">Settlements and payout records for your account.</p></div>
-              <Button size="sm" variant="secondary" icon="bank" onClick={() => toast("Payout requests are handled by support for now.", "info")}>Request payout</Button>
-            </div>
-
-            {payoutRows.length === 0 ? (
-              <p className="mt-4 text-xs text-muted">No payout records yet.</p>
-            ) : (
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full min-w-[560px] text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-line text-[10px] uppercase tracking-wide text-muted">
-                      <th className="pb-2 font-semibold">Reference</th><th className="pb-2 font-semibold">Gross</th><th className="pb-2 text-right font-semibold">Commission</th><th className="pb-2 text-right font-semibold">Net</th><th className="pb-2 text-right font-semibold">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payoutRows.map((payout, i) => (
-                      <tr key={payout.reference || i} className="border-b border-line/60 last:border-0">
-                        <td className="py-2.5 font-mono text-[11px] font-semibold text-ink">{payout.reference}</td>
-                        <td className="py-2.5 text-ink">{format(payout.gross)}</td>
-                        <td className="py-2.5 text-right text-muted">{format(payout.commission ?? Math.round((payout.gross || 0) - (payout.net || 0)))}</td>
-                        <td className="py-2.5 text-right font-semibold text-ink">{format(payout.net)}</td>
-                        <td className="py-2.5 text-right"><Badge tone={payout.status === "paid" ? "verified" : payout.status === "scheduled" ? "gold" : "neutral"}>{payout.status === "paid" ? "Paid" : payout.status === "scheduled" ? "Scheduled" : "On hold"}</Badge></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-line bg-white p-4">
-              <h3 className="text-sm font-bold text-ink">Payout details</h3>
-              <p className="mt-1 text-[11px] leading-relaxed text-muted">Bank account management and payout requests will be managed in a dedicated secure flow.</p>
-            </div>
-            <div className="rounded-xl border border-line bg-white p-4">
-              <h3 className="text-sm font-bold text-ink">Need a hand?</h3>
-              <p className="mt-1 text-[11px] leading-relaxed text-muted">Questions about commission, refunds or payouts? Our host team replies on WhatsApp.</p>
-              <a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 underline underline-offset-4"><Icon name="whatsapp" className="h-3.5 w-3.5" /> Chat with JosStay support</a>
-            </div>
-          </div>
-        </div>
+        <PayoutsPanel format={format} supportWhatsAppUrl={SUPPORT_WHATSAPP_URL} />
       )}
 
       <p className="mt-8 text-center text-[10px] text-muted">

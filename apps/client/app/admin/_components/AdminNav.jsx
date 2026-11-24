@@ -7,6 +7,7 @@ const items = [
   { href: "/account", label: "Overview" },
   { href: "/account/admin/reviews", label: "Listing reviews" },
   { href: "/account/admin/refunds", label: "Refund review" },
+  { href: "/account/admin/payouts", label: "Payout review" },
 ];
 
 export function AdminNav() {

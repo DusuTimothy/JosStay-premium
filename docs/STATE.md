@@ -24,8 +24,15 @@ _Last updated: 2026-11-24. Keep this short; update it at the end of each working
 
 ## Admin
 - Single entry point: `/account`. Admin users see the **Admin dashboard** plus a **My account** section.
-- Tools: `/account/admin/reviews` (approve/reject/suspend, reviewer audit `reviewed_by`/`reviewed_at`), `/account/admin/refunds` (manual resolve notes, resolver metadata).
-- Legacy `/admin`, `/admin/reviews`, `/admin/refunds` redirect into `/account/...`.
+- Tools: `/account/admin/reviews` (approve/reject/suspend, reviewer audit `reviewed_by`/`reviewed_at`), `/account/admin/refunds` (manual resolve notes, resolver metadata), `/account/admin/payouts` (approve/reject/mark-paid with reviewer/settlement audit).
+- Legacy `/admin`, `/admin/reviews`, `/admin/refunds`, `/admin/payouts` redirect into `/account/...`.
+
+## Host payouts
+- Phase 1 is implemented: ledger (`host_earnings`), reserve-on-request, verified Paystack-resolved bank account, one open request per host, admin review, and manual mark-paid. See `docs/PAYOUTS.md`.
+- Host UI: Payouts tab in `/host/dashboard` (`PayoutsPanel`). Admin UI: `/account/admin/payouts`.
+- Commission remains 10% of stay total, deducted from host gross; Paystack processing fee is not commissionable.
+- Payout availability defaults to `check_in + 24h` (`PAYOUT_HOLD_HOURS`); minimum request ₦10,000 (`PAYOUT_MIN_AMOUNT`).
+- Phase 2 (automated Paystack transfers + transfer webhooks) is deferred. No transfer API is called by the app.
 
 ## Client conventions
 - Phone inputs accept local Nigerian formats and normalize to `+234` on submit (`apps/client/lib/phone.js`).
@@ -44,13 +51,13 @@ Server scripts that hit the DB may need `DB_FORCE_IPV4=true` in this environment
 
 ## Open work
 See `docs/PRODUCTION_READINESS.md` for the full checklist. Current priorities:
-1. Run `db:migrate` (`20261124120000_booking_payment_fee.sql`) before/with the next deploy — booking queries now read `bookings.payment_fee`. Then confirm Vercel/Render deployed latest `main`; Render start command + `REDIS_URL`/TLS vars.
+1. Run `db:migrate` before/with the next deploy — `20261124120000_booking_payment_fee.sql` (booking queries read `bookings.payment_fee`) and `20261124130000_host_payouts_phase1.sql` (payout ledger/tables). Then confirm Vercel/Render deployed latest `main`; Render start command + `REDIS_URL`/TLS vars.
 2. Live Brevo test (signup verification + password reset emails).
 3. Paystack live keys + webhook configured in dashboard; controlled live payment test.
 4. Rotate exposed secrets (Cloudinary, Brevo, admin password, DB credentials).
 5. Real inventory import (`db/listings.json` → dry-run → import → `db:clear-sample`).
 6. Demo/placeholder cleanup — **on hold** (user asked to defer).
-7. Payout request flow — not built; support-only placeholder. Spec written: `docs/PAYOUTS.md` (phase 1 = ledger + request + admin review + manual settlement).
+7. Payout Phase 1 smoke test after migration: host bank verification, request/reserve, admin review, manual mark-paid, and cancellation/release. Phase 2 automation remains deferred (`docs/PAYOUTS.md`).
 8. Pipeline: analytics overview (host + admin) and cookie consent + cookie policy.
 
 ## Notes
