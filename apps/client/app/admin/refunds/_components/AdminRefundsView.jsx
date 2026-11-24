@@ -7,7 +7,14 @@ import { Button } from "@/components/ui/Button";
 import { useAuth, useToast } from "@/components/providers";
 import { api } from "@/lib/api";
 import { EmptyState, LoadingResults } from "@/components/shared/states";
+import { SearchSelect } from "@/components/shared/SearchSelect";
 import { AdminNav } from "../../_components/AdminNav";
+
+const REFUND_STATUS_OPTIONS = [
+  { value: "open", label: "Open" },
+  { value: "resolved", label: "Resolved" },
+  { value: "all", label: "All" },
+];
 
 const formatMoney = (amount, currency = "NGN") => {
   const value = Number(amount || 0);
@@ -117,16 +124,18 @@ export function AdminRefundsView() {
           <AdminNav />
         </div>
         <div className="flex items-center gap-2">
-          <select
-            className="field !h-10 !w-auto !py-0 text-sm"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            aria-label="Filter refund review status"
-          >
-            <option value="open">Open</option>
-            <option value="resolved">Resolved</option>
-            <option value="all">All</option>
-          </select>
+          <div className="w-[170px] max-w-full">
+            <SearchSelect
+              variant="form"
+              icon="sliders"
+              label="Refund status"
+              panelTitle="Filter refund reviews"
+              ariaLabel="Filter refund review status"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={REFUND_STATUS_OPTIONS}
+            />
+          </div>
           <Button variant="secondary" size="sm" onClick={load}>Refresh</Button>
         </div>
       </div>

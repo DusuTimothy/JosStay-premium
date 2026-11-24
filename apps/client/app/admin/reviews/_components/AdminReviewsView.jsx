@@ -8,7 +8,17 @@ import { Icon } from "@/components/ui/Icon";
 import { useAuth, useToast } from "@/components/providers";
 import { api } from "@/lib/api";
 import { EmptyState, LoadingResults } from "@/components/shared/states";
+import { SearchSelect } from "@/components/shared/SearchSelect";
 import { AdminNav } from "../../_components/AdminNav";
+
+const REVIEW_STATUS_OPTIONS = [
+  { value: "pending_review", label: "Pending review" },
+  { value: "rejected", label: "Rejected" },
+  { value: "verified", label: "Verified" },
+  { value: "suspended", label: "Suspended" },
+  { value: "draft", label: "Draft" },
+  { value: "", label: "All statuses" },
+];
 
 const statusTone = (status) => {
   if (status === "verified" || status === "Live") return "verified";
@@ -104,19 +114,18 @@ export function AdminReviewsView() {
           <AdminNav />
         </div>
         <div className="flex items-center gap-2">
-          <select
-            className="field !h-10 !w-auto !py-0 text-sm"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            aria-label="Filter by status"
-          >
-            <option value="pending_review">Pending review</option>
-            <option value="rejected">Rejected</option>
-            <option value="verified">Verified</option>
-            <option value="suspended">Suspended</option>
-            <option value="draft">Draft</option>
-            <option value="">All statuses</option>
-          </select>
+          <div className="w-[190px] max-w-full">
+            <SearchSelect
+              variant="form"
+              icon="sliders"
+              label="Status"
+              panelTitle="Filter by status"
+              ariaLabel="Filter by status"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={REVIEW_STATUS_OPTIONS}
+            />
+          </div>
           <Button variant="secondary" size="sm" onClick={load}>Refresh</Button>
         </div>
       </div>
