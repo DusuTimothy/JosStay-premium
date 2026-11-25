@@ -1,6 +1,6 @@
 # JosStay — Current State
 
-_Last updated: 2026-11-24. Keep this short; update it at the end of each working session._
+_Last updated: 2026-11-25. Keep this short; update it at the end of each working session._
 
 ## Stack / deploy
 - Client: Next.js 14 on Vercel — `https://jos-stay-premium.vercel.app`
@@ -34,6 +34,12 @@ _Last updated: 2026-11-24. Keep this short; update it at the end of each working
 - Commission remains 10% of stay total, deducted from host gross; Paystack processing fee is not commissionable.
 - Payout availability defaults to `check_in + 24h` (`PAYOUT_HOLD_HOURS`); minimum request ₦10,000 (`PAYOUT_MIN_AMOUNT`).
 - Phase 2 (automated Paystack transfers + transfer webhooks) is deferred. No transfer API is called by the app.
+
+## PWA
+- Installable web app: `/manifest.webmanifest`, 192/512 icons, maskable icon, Apple touch icon, standalone display.
+- `public/sw.js` caches only same-origin static assets and icons; HTML, `_next/data`, API, auth, booking, payment, refund, and payout responses are never cached.
+- Header and mobile menu expose an **Install app** button; Chromium uses `beforeinstallprompt`, iOS/Android fall back to step-by-step instructions.
+- Offline mode only shows a retry page; bookings and payments still require internet.
 
 ## Client conventions
 - Phone inputs accept local Nigerian formats and normalize to `+234` on submit (`apps/client/lib/phone.js`).

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { useCurrency } from "@/components/providers";
+import { InstallAppButton } from "@/components/pwa/InstallAppButton";
 import { Logo } from "./Logo";
 
 const nav = [
@@ -75,6 +76,7 @@ export function Header() {
 
         <div className="hidden items-center gap-3 xl:flex">
           <CurrencyToggle />
+          <InstallAppButton />
           <Link
             href="/account"
             className="inline-flex h-12 items-center gap-2 rounded-full border border-line px-5 text-[14px] font-medium text-ink transition hover:border-plum-300 hover:text-plum-700"
@@ -151,6 +153,7 @@ export function Header() {
                 Help centre
               </Link>
             </div>
+            <InstallAppButton full size="md" className="mt-2" />
           </div>
         </div>
       )}
