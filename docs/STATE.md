@@ -20,6 +20,7 @@ _Last updated: 2026-11-24. Keep this short; update it at the end of each working
 - Paystack processing fee is passed through to the guest (grossed up, configurable per channel, stored in `bookings.payment_fee`); the platform absorbs it only on refunds, which return the full charged amount.
 - Checkout link reuse per booking; unpaid pending bookings expire to `abandoned` after `PAYMENT_PENDING_TTL_MINUTES` (default 30).
 - Money safety: amount mismatch, duplicate successful charge, and late success on unavailable dates are recorded as `metadata.requiresRefund=true` instead of silently ignored.
+- Guests can create tracked refund requests from **My bookings → Request refund** (`public.refund_requests`, one open request per booking); admins review them under `/account/admin/refunds`. Guests can cancel while pending; admin approval, manual Paystack refund, and refund-reference recording stay separate.
 - **Refunds are manual only** — no Paystack refund API calls. Runbook: `docs/REFUND_RUNBOOK.md`.
 
 ## Admin

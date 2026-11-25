@@ -40,10 +40,28 @@ const BOOKING_SELECT_SQL = `
     b.payment_provider,
     b.paid_at,
     jsonb_build_object('slug', p.slug, 'name', p.name, 'host_id', p.host_id) as properties,
-    jsonb_build_object('code', r.code, 'name', r.name) as rooms
+    jsonb_build_object('code', r.code, 'name', r.name) as rooms,
+    rr.id as refund_request_id,
+    rr.reference as refund_request_reference,
+    rr.status as refund_request_status,
+    rr.amount as refund_request_amount,
+    rr.reason as refund_request_reason,
+    rr.refund_reference as refund_request_refund_reference,
+    rr.admin_note as refund_request_admin_note,
+    rr.reviewed_at as refund_request_reviewed_at,
+    rr.refunded_at as refund_request_refunded_at,
+    rr.created_at as refund_request_created_at
   from public.bookings b
   join public.properties p on p.id = b.property_id
   join public.rooms r on r.id = b.room_id
+  left join lateral (
+    select id, reference, status, amount, reason, refund_reference, admin_note,
+           reviewed_at, refunded_at, created_at
+    from public.refund_requests
+    where booking_id = b.id
+    order by created_at desc
+    limit 1
+  ) rr on true
 `;
 
 const isActive = (status) => ACTIVE_STATUSES.includes(status);

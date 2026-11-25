@@ -117,6 +117,28 @@ export const mapBookingRow = (row, { includeInternal = false } = {}) => {
   const paymentReference = row.payment_reference || row.paymentReference || null;
   const paymentProvider = row.payment_provider || row.paymentProvider || null;
   const paidAt = row.paid_at || row.paidAt || null;
+  const refundRequestId = row.refund_request_id || row.refundRequest?.id || null;
+  const refundRequest = refundRequestId
+    ? {
+        id: refundRequestId,
+        reference: row.refund_request_reference || row.refundRequest?.reference || null,
+        status: row.refund_request_status || row.refundRequest?.status || null,
+        amount: Number(row.refund_request_amount ?? row.refundRequest?.amount ?? 0),
+        reason: row.refund_request_reason || row.refundRequest?.reason || null,
+        refundReference:
+          row.refund_request_refund_reference || row.refundRequest?.refundReference || null,
+        adminNote: row.refund_request_admin_note || row.refundRequest?.adminNote || null,
+        reviewedAt: toDateTimeString(
+          row.refund_request_reviewed_at || row.refundRequest?.reviewedAt,
+        ),
+        refundedAt: toDateTimeString(
+          row.refund_request_refunded_at || row.refundRequest?.refundedAt,
+        ),
+        createdAt: toDateTimeString(
+          row.refund_request_created_at || row.refundRequest?.createdAt,
+        ),
+      }
+    : row.refundRequest || null;
 
   return {
     ...(includeInternal && row.id ? { id: row.id } : {}),
@@ -144,6 +166,7 @@ export const mapBookingRow = (row, { includeInternal = false } = {}) => {
     ...(paymentReference ? { paymentReference } : {}),
     ...(paymentProvider ? { paymentProvider } : {}),
     ...(paidAt ? { paidAt: toDateTimeString(paidAt) } : {}),
+    ...(refundRequest ? { refundRequest } : {}),
     guest: row.guest || {
       firstName: row.guest_first_name,
       lastName: row.guest_last_name,
@@ -152,6 +175,64 @@ export const mapBookingRow = (row, { includeInternal = false } = {}) => {
     },
   };
 };
+
+export const mapRefundRequestRow = (row) => ({
+  id: row.id,
+  reference: row.reference,
+  bookingId: row.booking_id || null,
+  bookingReference: row.booking_reference,
+  userId: row.user_id || null,
+  paymentReference: row.payment_reference || null,
+  stayAmount: Number(row.stay_amount || 0),
+  paymentFee: Number(row.payment_fee || 0),
+  amount: Number(row.amount || 0),
+  currency: row.currency || "NGN",
+  reason: row.reason,
+  details: row.details || null,
+  status: row.status,
+  adminNote: row.admin_note || null,
+  refundReference: row.refund_reference || null,
+  booking: {
+    reference: row.booking_reference || null,
+    status: row.booking_status || null,
+    paymentStatus: row.booking_payment_status || null,
+    checkIn: toDateString(row.check_in),
+    checkOut: toDateString(row.check_out),
+    total: Number(row.booking_total || 0),
+    paymentFee: Number(row.booking_payment_fee || 0),
+    paymentReference: row.booking_payment_reference || null,
+    propertyName: row.property_name || null,
+    propertySlug: row.property_slug || null,
+    roomName: row.room_name || null,
+    guestName: row.guest_name || null,
+    guestEmail: row.guest_email || null,
+  },
+  requester: row.requester_name || row.requester_email
+    ? {
+        id: row.user_id || null,
+        name: row.requester_name || null,
+        email: row.requester_email || null,
+      }
+    : null,
+  reviewer: row.reviewer_name || row.reviewer_email
+    ? {
+        id: row.reviewed_by || null,
+        name: row.reviewer_name || null,
+        email: row.reviewer_email || null,
+      }
+    : null,
+  refunder: row.refunder_name || row.refunder_email
+    ? {
+        id: row.refunded_by || null,
+        name: row.refunder_name || null,
+        email: row.refunder_email || null,
+      }
+    : null,
+  reviewedAt: toDateTimeString(row.reviewed_at),
+  refundedAt: toDateTimeString(row.refunded_at),
+  createdAt: toDateTimeString(row.created_at),
+  updatedAt: toDateTimeString(row.updated_at),
+});
 
 export const mapPayoutRow = (row) => ({
   reference: row.reference,

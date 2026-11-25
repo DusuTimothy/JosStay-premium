@@ -1,14 +1,44 @@
 # Refund Review Runbook
 
-JosStay flags some Paystack payments for **manual refund review**. The app does **not** automatically issue refunds.
+JosStay collects **guest refund requests** and flags some Paystack payments for **manual refund review**. The app does **not** automatically issue refunds.
 
 ## Where to look
 
-- Admin UI: `/admin/refunds` (admin account required).
-- API: `GET /api/admin/payments/refunds?status=open` (admin auth required).
-- Database: `public.payments.metadata.requiresRefund = true`.
+- Admin UI: `/account/admin/refunds` (admin account required).
+- Guest requests API: `GET /api/admin/refund-requests` (admin auth required).
+- Payment flags API: `GET /api/admin/payments/refunds?status=open` (admin auth required).
+- Database: `public.refund_requests` and `public.payments.metadata.requiresRefund = true`.
 
-Open items are payments where `requiresRefund=true` and `refundResolved` is not `true`.
+Open payment flags are payments where `requiresRefund=true` and `refundResolved` is not `true`.
+
+## Guest refund requests
+
+A guest starts a request from **My bookings → Request refund**. The app records it in `public.refund_requests` with:
+
+- a request reference (`JS-RF-…`),
+- the booking and Paystack payment references,
+- the full refundable amount (`stay_amount + payment_fee`),
+- the reason and optional guest details,
+- who reviewed/refunded it and when.
+
+Only **paid** bookings can be requested. A booking can have only one open request at a time (`pending_review` or `approved`). Guests can cancel their own request while it is still `pending_review`.
+
+Lifecycle:
+
+```text
+pending_review → approved → refunded
+pending_review → rejected
+pending_review → cancelled (guest)
+```
+
+1. Open the **Guest requests** tab in `/account/admin/refunds`.
+2. Verify the booking and Paystack transaction.
+3. **Approve** the request (optional note) if the refund is valid.
+4. Issue the refund **manually in the Paystack dashboard** for the full charged amount.
+5. **Mark refunded** with the Paystack refund reference and a settlement note. This also cancels the booking when it is still `upcoming` or `confirmed`, releasing the room. Completed/cancelled bookings are left untouched.
+6. **Reject** with a note if the request is not eligible; the guest sees the note in My bookings.
+
+Statuses are only records of a manual process. No endpoint calls Paystack's refund API and no money moves automatically.
 
 ## Why a payment gets flagged
 
